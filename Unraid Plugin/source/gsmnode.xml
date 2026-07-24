@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Agent>
+  <Name>gsmnode</Name>
+  <Variables>
+    <Variable Help="Where the gsmnode API Server answers, as seen from this server. Include the port. eg: http://192.168.1.10:8080" Desc="API Server URL" Default="">API_URL</Variable>
+    <Variable Help="A gsmnode account to send as. Make one in the Web App, or with the API Server's create-user script. Its texts are owned by that account, so give the server its own." Desc="Account email" Default="">EMAIL</Variable>
+    <Variable Help="The password for that account. It is stored in clear text in the generated agent script on the flash drive, the same way every other Unraid agent stores its credentials." Desc="Account password" Default="">PASSWORD</Variable>
+    <Variable Help="Who gets the text. Separate several with commas. Use the format the SIM's network expects — international (+441234567890) always works." Desc="Recipient numbers" Default="">PHONE_NUMBERS</Variable>
+    <Variable Help="The gateway device id of the phone that sends. Leave it as auto to let the API Server pick the first phone that is online. The id is on the phone's card in the Web App's Devices tab." Desc="Sending phone" Default="auto">DEVICE_ID</Variable>
+    <Variable Help="Which SIM to send from, counted from zero — slot 0 is the phone's SIM 1. Leave it as auto to use whichever SIM the phone sends from by default." Desc="SIM slot" Default="auto">SIM_SLOT</Variable>
+    <Variable Help="Longest text to send, in characters. An SMS is billed per 160-character segment and a notification body can run to pages, so anything longer is cut and ends in an ellipsis. Set 0 to never cut." Desc="Maximum characters" Default="320">MAX_LENGTH</Variable>
+    <Variable Help="The fields that make up the first line of the text. The server's hostname is always put in front of it." Desc="Notification Title" Default="$SUBJECT">TITLE</Variable>
+    <Variable Help="The fields that make up the rest of the text." Desc="Notification Message" Default="$DESCRIPTION">MESSAGE</Variable>
+  </Variables>
+  <Script>
+    <![CDATA[
+#!/bin/bash
+############
+{0}
+############
+# gsmnode notification agent.
+#
+# Unraid runs this once per notification with the notification in the
+# environment (EVENT SUBJECT DESCRIPTION IMPORTANCE CONTENT TIMESTAMP LINK).
+# It logs in to a gsmnode API Server and queues the text as an SMS.
+#
+# The block above is written by Settings -> Notifications -> Notification
+# Agents. Change the settings there; editing them here is overwritten.
+say() { echo "gsmnode: $*"; }
+die() { say "$*"; exit 1; }
+command -v curl >/dev/null || die "curl is missing"
+command -v jq >/dev/null || die "jq is missing"
+# Settings.
+API=${API_URL%/}
+[[ -n $API ]] || die "no API Server URL configured"
+[[ $API == http://* || $API == https://* ]] || API=http://$API
+[[ -n $EMAIL ]] || die "no account email configured"
+[[ -n $PASSWORD ]] || die "no account password configured"
+# Recipients are typed as one comma-separated line and sent as an array.
+TO=$(jq -cn --arg s "$PHONE_NUMBERS" '$s|split(",")|map(sub("^ +";"")|sub(" +$";""))|map(select(length>0))')
+[[ $(jq length <<<"$TO") -gt 0 ]] || die "no recipient numbers configured"
+# The picked fields, with the \n the picker stores turned into real newlines.
+HEAD=$(echo -e "$TITLE")
+BODY=$(echo -e "$MESSAGE")
+TEXT=$(hostname)
+[[ -n $HEAD ]] && TEXT="$TEXT: $HEAD"
+[[ -n $BODY ]] && TEXT=$(printf '%s\n%s' "$TEXT" "$BODY")
+# An SMS is billed per segment, and a notification body can run to pages.
+if [[ $MAX_LENGTH =~ ^[0-9]+$ && $MAX_LENGTH -gt 3 && ${#TEXT} -gt $MAX_LENGTH ]]; then
+TEXT="${TEXT:0:$((MAX_LENGTH-3))}..."
+say "cut the text to $MAX_LENGTH characters"
+fi
+# Log in. The API Server hands out a bearer token; nothing is cached, so a
+# notification never leaves state on the flash drive.
+CREDS=$(jq -cn --arg e "$EMAIL" --arg p "$PASSWORD" '{email:$e,password:$p}')
+REPLY=$(curl -sS -m 15 -H 'Content-Type: application/json' -d "$CREDS" "$API/api/auth/login") || die "cannot reach $API"
+TOKEN=$(jq -r '.access_token // empty' <<<"$REPLY" 2>/dev/null)
+[[ -n $TOKEN ]] || die "login failed: $(jq -r '.error // "check the email and password"' <<<"$REPLY" 2>/dev/null)"
+# Queue the SMS. Leaving device_id out lets the API Server pick a phone that is
+# online; leaving sim_number out lets the phone use its default SIM.
+SEND=$(jq -cn --argjson to "$TO" --arg text "$TEXT" '{type:"sms",phone_numbers:$to,text_message:$text}')
+[[ -n $DEVICE_ID && $DEVICE_ID != auto ]] && SEND=$(jq -c --arg d "$DEVICE_ID" '.+{device_id:$d}' <<<"$SEND")
+[[ $SIM_SLOT =~ ^[0-9]+$ ]] && SEND=$(jq -c --argjson s "$SIM_SLOT" '.+{sim_number:$s}' <<<"$SEND")
+OUT=$(mktemp)
+CODE=$(curl -sS -m 20 -o "$OUT" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$SEND" "$API/api/messages")
+REPLY=$(<"$OUT")
+rm -f "$OUT"
+case $CODE in
+20*) say "queued for $(jq -r 'join(", ")' <<<"$TO")"; exit 0;;
+401) die "the API Server rejected the account";;
+esac
+die "the API Server answered HTTP $CODE $(jq -r '.error // empty' <<<"$REPLY" 2>/dev/null)"
+    ]]>
+  </Script>
+</Agent>

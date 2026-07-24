@@ -30,6 +30,9 @@ to the API Server.
 ├────────────┤        │                  │        │              │
 │ HA plugin  │◄──────►│                  │───────►│              │
 │  (Python)  │        │                  │        │              │
+├────────────┤        │                  │        │              │
+│Unraid plug.│───────►│                  │        │              │
+│   (bash)   │        │                  │        │              │
 └────────────┘        └──────────────────┘        └──────────────┘
 ```
 
@@ -51,6 +54,11 @@ so incoming messages and calls become Home Assistant events, and can put either
 of the existing overviews in Home Assistant's sidebar. It is configured entirely
 from the Home Assistant UI — nothing goes in `configuration.yaml`.
 
+The **Unraid Plugin** is the fifth, and the smallest: it adds a **gsmnode**
+notification agent to Unraid, so the server's own notifications go out as SMS.
+It only sends. Unraid hosts it the way it hosts its Telegram and Discord agents,
+so it is configured under Settings → Notifications like those are.
+
 ## Surfaces
 
 | Folder | Stack | Port | Status |
@@ -60,6 +68,7 @@ from the Home Assistant UI — nothing goes in `configuration.yaml`.
 | [`Phone Agent/`](Phone%20Agent/) | Flutter (Android) | — | ✅ Built & run on a real device; foreground service + delivery reports |
 | [`Phone App/`](Phone%20App/) | Flutter (Android) | — | ✅ Built — mobile mirror of the Web App; not yet run against a live server |
 | [`Home Assistant Plugin/`](Home%20Assistant%20Plugin/) | HA custom component (Python) | — | ✅ UI-only (no YAML): config flow, `send_sms`/`call` services, gateway + per-phone sensors, incoming events, notify entity, optional sidebar panel |
+| [`Unraid Plugin/`](Unraid%20Plugin/) | Unraid plugin (`.plg` + bash) | — | ✅ Built & unit-tested; not yet installed on a live server |
 
 ## PocketBase collections
 
@@ -122,6 +131,17 @@ cd gsmnode
    [`scripts/publish-ha-plugin.sh`](scripts/publish-ha-plugin.sh); the process
    is written down in
    [`Home Assistant Plugin/PUBLISHING.md`](Home%20Assistant%20Plugin/PUBLISHING.md).
+7. **Unraid Plugin** (optional) — on the Unraid server, **Plugins → Install
+   Plugin**, and paste
+   `https://raw.githubusercontent.com/freefall-dev/gsmnode-unraid/main/gsmnode.plg`.
+   Then fill the agent in under **Settings → Notifications → Notification
+   Agents**, and tick **Agents** on the severities you want texted. See
+   [`Unraid Plugin/README.md`](Unraid%20Plugin/README.md).
+
+   Published the same way, from
+   [`scripts/publish-unraid-plugin.sh`](scripts/publish-unraid-plugin.sh) to
+   [`freefall-dev/gsmnode-unraid`](https://github.com/freefall-dev/gsmnode-unraid) —
+   Unraid installs a plugin from a URL that serves the `.plg` and nothing else.
 
 ## Deploy with Docker
 
@@ -242,6 +262,8 @@ See [`API Server/README.md`](API%20Server/README.md) for the wire format.
 - [Phone Agent README](Phone%20Agent/README.md) — Flutter build + native SMS wiring
 - [Home Assistant Plugin README](Home%20Assistant%20Plugin/README.md) — install,
   services, sensors, incoming events, notify entity, sidebar panel
+- [Unraid Plugin README](Unraid%20Plugin/README.md) — install, the notification
+  agent's settings, what it sends
 
 ## License
 

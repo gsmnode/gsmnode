@@ -1,0 +1,124 @@
+<?xml version='1.0' standalone='yes'?>
+
+<!-- Built from "Unraid Plugin/source/" by scripts/build-plg.sh. Do not edit the
+     generated gsmnode.plg by hand — edit this template, or the agent definition
+     in gsmnode.xml, and build again. -->
+
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "gsmnode">
+<!ENTITY author    "FreeFallDev">
+<!ENTITY version   "2026.07.24">
+<!ENTITY launch    "Settings/Notifications">
+<!ENTITY gitURL    "https://raw.githubusercontent.com/freefall-dev/gsmnode-unraid/main">
+<!ENTITY pluginURL "&gitURL;/&name;.plg">
+]>
+
+<PLUGIN
+  name="&name;"
+  author="&author;"
+  version="&version;"
+  launch="&launch;"
+  pluginURL="&pluginURL;"
+  min="6.10.0"
+  icon="mobile"
+  support="https://github.com/freefall-dev/gsmnode/issues">
+
+<CHANGES>
+##gsmnode
+
+###2026.07.24
+- First release. Adds a **gsmnode** notification agent, so Unraid notifications
+  leave as SMS through an Android phone on a gsmnode gateway.
+- Configure it under **Settings &#8594; Notifications &#8594; Notification Agents**,
+  then tick **Agents** on the notification levels you want texted.
+</CHANGES>
+
+
+<!-- PRE-INSTALL: this plugin is a notification agent and nothing else, so there
+     is no point installing it where the page that hosts one does not exist. -->
+<FILE Run="/bin/bash">
+<INLINE><![CDATA[
+if [[ ! -d /usr/local/emhttp/plugins/dynamix/agents ]]; then
+  echo
+  echo "gsmnode needs Unraid's Notification Agents page, which this server does not have."
+  echo "It arrived in Unraid 6.10. Upgrade, and install this again."
+  echo
+  exit 1
+fi
+if ! command -v jq >/dev/null; then
+  echo
+  echo "gsmnode needs jq to build what it sends, and this server does not have it."
+  echo
+  exit 1
+fi
+]]></INLINE>
+</FILE>
+
+
+<!-- INSTALL: unpack the agent definition and its icon onto the flash drive,
+     then put them where the webGUI reads them.
+
+     /usr/local/emhttp is a RAM disk and does not survive a reboot. Unraid
+     reinstalls every plugin on the flash drive at boot, which runs this again
+     and restores both copies — so the flash drive is the one that matters. -->
+<FILE Run="/bin/bash">
+<INLINE><![CDATA[
+mkdir -p /boot/config/plugins/gsmnode
+
+base64 -d > /boot/config/plugins/gsmnode/gsmnode.xml <<'AGENT_DEFINITION'
+@AGENT_XML_BASE64@
+AGENT_DEFINITION
+
+base64 -d > /boot/config/plugins/gsmnode/gsmnode.png <<'AGENT_ICON'
+@AGENT_ICON_BASE64@
+AGENT_ICON
+
+install -D -m 644 /boot/config/plugins/gsmnode/gsmnode.xml /usr/local/emhttp/plugins/dynamix/agents/gsmnode.xml
+install -D -m 644 /boot/config/plugins/gsmnode/gsmnode.png /usr/local/emhttp/plugins/dynamix/icons/gsmnode.png
+]]></INLINE>
+</FILE>
+
+
+<!-- POST-INSTALL: say what to do next. An agent does nothing until it is filled
+     in and switched on, and neither happens here. -->
+<FILE Run="/bin/bash">
+<INLINE><![CDATA[
+echo
+echo "-----------------------------------------------------------"
+echo " gsmnode is installed."
+echo
+echo " Two things left, both in the webGUI:"
+echo
+echo " 1. Settings -> Notifications -> Notification Agents -> gsmnode"
+echo "    Fill in the API Server, the account and who to text, set"
+echo "    Agent function to Enabled, and Apply. Then press Test."
+echo
+echo " 2. Settings -> Notifications -> Notification Settings"
+echo "    Tick Agents on the notification levels you want texted."
+echo
+echo " Apache License 2.0 - https://github.com/freefall-dev/gsmnode"
+echo "-----------------------------------------------------------"
+echo
+]]></INLINE>
+</FILE>
+
+
+<!-- REMOVE: take the configured agent too. It is a self-contained script that
+     holds the account password and would keep sending texts after the plugin
+     that explains it is gone. -->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE><![CDATA[
+rm -f /usr/local/emhttp/plugins/dynamix/agents/gsmnode.xml
+rm -f /usr/local/emhttp/plugins/dynamix/icons/gsmnode.png
+rm -f /boot/config/plugins/dynamix/notifications/agents/gsmnode.sh
+rm -f /boot/config/plugins/dynamix/notifications/agents-disabled/gsmnode.sh
+rm -rf /boot/config/plugins/gsmnode
+rm -f /boot/config/plugins/gsmnode.plg
+
+echo
+echo "gsmnode is removed, and so are the agent and the account it was told to send as."
+echo
+]]></INLINE>
+</FILE>
+
+</PLUGIN>

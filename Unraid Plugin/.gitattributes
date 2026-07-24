@@ -1,0 +1,12 @@
+# Everything here is built on Windows and run by bash on an Unraid server.
+#
+# The .plg carries shell blocks Unraid executes, and the agent definition inside
+# it is spliced into a shell script the webGUI writes to the flash drive — so a
+# CR in either ends up somewhere it is run, not merely read.
+*.plg text eol=lf
+*.plg.in text eol=lf
+*.sh text eol=lf
+source/gsmnode.xml text eol=lf
+
+# The icon is carried through the build byte for byte.
+source/gsmnode.png binary

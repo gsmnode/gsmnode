@@ -1,0 +1,36 @@
+# The plugin's own checks. There is no Unraid equivalent of hassfest — nothing
+# validates a .plg but a real server — so this is what stands in for it: the
+# agent is rendered the way the webGUI renders it and then actually run against
+# a stand-in API Server.
+name: Validate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # bash, curl and jq are all on the runner, and all three are what the
+      # agent needs — so the tests that run it for real are not skipped here.
+      - run: bash --version && curl --version && jq --version
+      - run: python -m unittest discover tests
+
+  build:
+    name: Built plugin is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # gsmnode.plg is committed because that file is the release. Rebuilding it
+      # here catches a change to source/ that was never built.
+      - run: sh scripts/build-plg.sh
+      - run: git diff --exit-code gsmnode.plg

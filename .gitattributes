@@ -5,3 +5,8 @@
 # Docker entrypoints / configs consumed by Linux tooling.
 Dockerfile text eol=lf
 .dockerignore text eol=lf
+
+# Unraid plugins. The .plg carries shell blocks bash runs on the server, so a CR
+# would end up in something Unraid executes. The rest of that folder's rules are
+# in "Unraid Plugin/.gitattributes", so they travel with it when it is split out.
+*.plg text eol=lf

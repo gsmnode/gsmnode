@@ -1,0 +1,327 @@
+<?xml version='1.0' standalone='yes'?>
+
+<!-- Built from "Unraid Plugin/source/" by scripts/build-plg.sh. Do not edit the
+     generated gsmnode.plg by hand — edit this template, or the agent definition
+     in gsmnode.xml, and build again. -->
+
+<!DOCTYPE PLUGIN [
+<!ENTITY name      "gsmnode">
+<!ENTITY author    "FreeFallDev">
+<!ENTITY version   "2026.07.24">
+<!ENTITY launch    "Settings/Notifications">
+<!ENTITY gitURL    "https://raw.githubusercontent.com/freefall-dev/gsmnode-unraid/main">
+<!ENTITY pluginURL "&gitURL;/&name;.plg">
+]>
+
+<PLUGIN
+  name="&name;"
+  author="&author;"
+  version="&version;"
+  launch="&launch;"
+  pluginURL="&pluginURL;"
+  min="6.10.0"
+  icon="mobile"
+  support="https://github.com/freefall-dev/gsmnode/issues">
+
+<CHANGES>
+##gsmnode
+
+###2026.07.24
+- First release. Adds a **gsmnode** notification agent, so Unraid notifications
+  leave as SMS through an Android phone on a gsmnode gateway.
+- Configure it under **Settings &#8594; Notifications &#8594; Notification Agents**,
+  then tick **Agents** on the notification levels you want texted.
+</CHANGES>
+
+
+<!-- PRE-INSTALL: this plugin is a notification agent and nothing else, so there
+     is no point installing it where the page that hosts one does not exist. -->
+<FILE Run="/bin/bash">
+<INLINE><![CDATA[
+if [[ ! -d /usr/local/emhttp/plugins/dynamix/agents ]]; then
+  echo
+  echo "gsmnode needs Unraid's Notification Agents page, which this server does not have."
+  echo "It arrived in Unraid 6.10. Upgrade, and install this again."
+  echo
+  exit 1
+fi
+if ! command -v jq >/dev/null; then
+  echo
+  echo "gsmnode needs jq to build what it sends, and this server does not have it."
+  echo
+  exit 1
+fi
+]]></INLINE>
+</FILE>
+
+
+<!-- INSTALL: unpack the agent definition and its icon onto the flash drive,
+     then put them where the webGUI reads them.
+
+     /usr/local/emhttp is a RAM disk and does not survive a reboot. Unraid
+     reinstalls every plugin on the flash drive at boot, which runs this again
+     and restores both copies — so the flash drive is the one that matters. -->
+<FILE Run="/bin/bash">
+<INLINE><![CDATA[
+mkdir -p /boot/config/plugins/gsmnode
+
+base64 -d > /boot/config/plugins/gsmnode/gsmnode.xml <<'AGENT_DEFINITION'
+PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgiPz4KPEFnZW50PgogIDxOYW1lPmdz
+bW5vZGU8L05hbWU+CiAgPFZhcmlhYmxlcz4KICAgIDxWYXJpYWJsZSBIZWxwPSJXaGVyZSB0aGUg
+Z3Ntbm9kZSBBUEkgU2VydmVyIGFuc3dlcnMsIGFzIHNlZW4gZnJvbSB0aGlzIHNlcnZlci4gSW5j
+bHVkZSB0aGUgcG9ydC4gZWc6IGh0dHA6Ly8xOTIuMTY4LjEuMTA6ODA4MCIgRGVzYz0iQVBJIFNl
+cnZlciBVUkwiIERlZmF1bHQ9IiI+QVBJX1VSTDwvVmFyaWFibGU+CiAgICA8VmFyaWFibGUgSGVs
+cD0iQSBnc21ub2RlIGFjY291bnQgdG8gc2VuZCBhcy4gTWFrZSBvbmUgaW4gdGhlIFdlYiBBcHAs
+IG9yIHdpdGggdGhlIEFQSSBTZXJ2ZXIncyBjcmVhdGUtdXNlciBzY3JpcHQuIEl0cyB0ZXh0cyBh
+cmUgb3duZWQgYnkgdGhhdCBhY2NvdW50LCBzbyBnaXZlIHRoZSBzZXJ2ZXIgaXRzIG93bi4iIERl
+c2M9IkFjY291bnQgZW1haWwiIERlZmF1bHQ9IiI+RU1BSUw8L1ZhcmlhYmxlPgogICAgPFZhcmlh
+YmxlIEhlbHA9IlRoZSBwYXNzd29yZCBmb3IgdGhhdCBhY2NvdW50LiBJdCBpcyBzdG9yZWQgaW4g
+Y2xlYXIgdGV4dCBpbiB0aGUgZ2VuZXJhdGVkIGFnZW50IHNjcmlwdCBvbiB0aGUgZmxhc2ggZHJp
+dmUsIHRoZSBzYW1lIHdheSBldmVyeSBvdGhlciBVbnJhaWQgYWdlbnQgc3RvcmVzIGl0cyBjcmVk
+ZW50aWFscy4iIERlc2M9IkFjY291bnQgcGFzc3dvcmQiIERlZmF1bHQ9IiI+UEFTU1dPUkQ8L1Zh
+cmlhYmxlPgogICAgPFZhcmlhYmxlIEhlbHA9IldobyBnZXRzIHRoZSB0ZXh0LiBTZXBhcmF0ZSBz
+ZXZlcmFsIHdpdGggY29tbWFzLiBVc2UgdGhlIGZvcm1hdCB0aGUgU0lNJ3MgbmV0d29yayBleHBl
+Y3RzIOKAlCBpbnRlcm5hdGlvbmFsICgrNDQxMjM0NTY3ODkwKSBhbHdheXMgd29ya3MuIiBEZXNj
+PSJSZWNpcGllbnQgbnVtYmVycyIgRGVmYXVsdD0iIj5QSE9ORV9OVU1CRVJTPC9WYXJpYWJsZT4K
+ICAgIDxWYXJpYWJsZSBIZWxwPSJUaGUgZ2F0ZXdheSBkZXZpY2UgaWQgb2YgdGhlIHBob25lIHRo
+YXQgc2VuZHMuIExlYXZlIGl0IGFzIGF1dG8gdG8gbGV0IHRoZSBBUEkgU2VydmVyIHBpY2sgdGhl
+IGZpcnN0IHBob25lIHRoYXQgaXMgb25saW5lLiBUaGUgaWQgaXMgb24gdGhlIHBob25lJ3MgY2Fy
+ZCBpbiB0aGUgV2ViIEFwcCdzIERldmljZXMgdGFiLiIgRGVzYz0iU2VuZGluZyBwaG9uZSIgRGVm
+YXVsdD0iYXV0byI+REVWSUNFX0lEPC9WYXJpYWJsZT4KICAgIDxWYXJpYWJsZSBIZWxwPSJXaGlj
+aCBTSU0gdG8gc2VuZCBmcm9tLCBjb3VudGVkIGZyb20gemVybyDigJQgc2xvdCAwIGlzIHRoZSBw
+aG9uZSdzIFNJTSAxLiBMZWF2ZSBpdCBhcyBhdXRvIHRvIHVzZSB3aGljaGV2ZXIgU0lNIHRoZSBw
+aG9uZSBzZW5kcyBmcm9tIGJ5IGRlZmF1bHQuIiBEZXNjPSJTSU0gc2xvdCIgRGVmYXVsdD0iYXV0
+byI+U0lNX1NMT1Q8L1ZhcmlhYmxlPgogICAgPFZhcmlhYmxlIEhlbHA9Ikxvbmdlc3QgdGV4dCB0
+byBzZW5kLCBpbiBjaGFyYWN0ZXJzLiBBbiBTTVMgaXMgYmlsbGVkIHBlciAxNjAtY2hhcmFjdGVy
+IHNlZ21lbnQgYW5kIGEgbm90aWZpY2F0aW9uIGJvZHkgY2FuIHJ1biB0byBwYWdlcywgc28gYW55
+dGhpbmcgbG9uZ2VyIGlzIGN1dCBhbmQgZW5kcyBpbiBhbiBlbGxpcHNpcy4gU2V0IDAgdG8gbmV2
+ZXIgY3V0LiIgRGVzYz0iTWF4aW11bSBjaGFyYWN0ZXJzIiBEZWZhdWx0PSIzMjAiPk1BWF9MRU5H
+VEg8L1ZhcmlhYmxlPgogICAgPFZhcmlhYmxlIEhlbHA9IlRoZSBmaWVsZHMgdGhhdCBtYWtlIHVw
+IHRoZSBmaXJzdCBsaW5lIG9mIHRoZSB0ZXh0LiBUaGUgc2VydmVyJ3MgaG9zdG5hbWUgaXMgYWx3
+YXlzIHB1dCBpbiBmcm9udCBvZiBpdC4iIERlc2M9Ik5vdGlmaWNhdGlvbiBUaXRsZSIgRGVmYXVs
+dD0iJFNVQkpFQ1QiPlRJVExFPC9WYXJpYWJsZT4KICAgIDxWYXJpYWJsZSBIZWxwPSJUaGUgZmll
+bGRzIHRoYXQgbWFrZSB1cCB0aGUgcmVzdCBvZiB0aGUgdGV4dC4iIERlc2M9Ik5vdGlmaWNhdGlv
+biBNZXNzYWdlIiBEZWZhdWx0PSIkREVTQ1JJUFRJT04iPk1FU1NBR0U8L1ZhcmlhYmxlPgogIDwv
+VmFyaWFibGVzPgogIDxTY3JpcHQ+CiAgICA8IVtDREFUQVsKIyEvYmluL2Jhc2gKIyMjIyMjIyMj
+IyMjCnswfQojIyMjIyMjIyMjIyMKIyBnc21ub2RlIG5vdGlmaWNhdGlvbiBhZ2VudC4KIwojIFVu
+cmFpZCBydW5zIHRoaXMgb25jZSBwZXIgbm90aWZpY2F0aW9uIHdpdGggdGhlIG5vdGlmaWNhdGlv
+biBpbiB0aGUKIyBlbnZpcm9ubWVudCAoRVZFTlQgU1VCSkVDVCBERVNDUklQVElPTiBJTVBPUlRB
+TkNFIENPTlRFTlQgVElNRVNUQU1QIExJTkspLgojIEl0IGxvZ3MgaW4gdG8gYSBnc21ub2RlIEFQ
+SSBTZXJ2ZXIgYW5kIHF1ZXVlcyB0aGUgdGV4dCBhcyBhbiBTTVMuCiMKIyBUaGUgYmxvY2sgYWJv
+dmUgaXMgd3JpdHRlbiBieSBTZXR0aW5ncyAtPiBOb3RpZmljYXRpb25zIC0+IE5vdGlmaWNhdGlv
+bgojIEFnZW50cy4gQ2hhbmdlIHRoZSBzZXR0aW5ncyB0aGVyZTsgZWRpdGluZyB0aGVtIGhlcmUg
+aXMgb3ZlcndyaXR0ZW4uCnNheSgpIHsgZWNobyAiZ3Ntbm9kZTogJCoiOyB9CmRpZSgpIHsgc2F5
+ICIkKiI7IGV4aXQgMTsgfQpjb21tYW5kIC12IGN1cmwgPi9kZXYvbnVsbCB8fCBkaWUgImN1cmwg
+aXMgbWlzc2luZyIKY29tbWFuZCAtdiBqcSA+L2Rldi9udWxsIHx8IGRpZSAianEgaXMgbWlzc2lu
+ZyIKIyBTZXR0aW5ncy4KQVBJPSR7QVBJX1VSTCUvfQpbWyAtbiAkQVBJIF1dIHx8IGRpZSAibm8g
+QVBJIFNlcnZlciBVUkwgY29uZmlndXJlZCIKW1sgJEFQSSA9PSBodHRwOi8vKiB8fCAkQVBJID09
+IGh0dHBzOi8vKiBdXSB8fCBBUEk9aHR0cDovLyRBUEkKW1sgLW4gJEVNQUlMIF1dIHx8IGRpZSAi
+bm8gYWNjb3VudCBlbWFpbCBjb25maWd1cmVkIgpbWyAtbiAkUEFTU1dPUkQgXV0gfHwgZGllICJu
+byBhY2NvdW50IHBhc3N3b3JkIGNvbmZpZ3VyZWQiCiMgUmVjaXBpZW50cyBhcmUgdHlwZWQgYXMg
+b25lIGNvbW1hLXNlcGFyYXRlZCBsaW5lIGFuZCBzZW50IGFzIGFuIGFycmF5LgpUTz0kKGpxIC1j
+biAtLWFyZyBzICIkUEhPTkVfTlVNQkVSUyIgJyRzfHNwbGl0KCIsIil8bWFwKHN1YigiXiArIjsi
+Iil8c3ViKCIgKyQiOyIiKSl8bWFwKHNlbGVjdChsZW5ndGg+MCkpJykKW1sgJChqcSBsZW5ndGgg
+PDw8IiRUTyIpIC1ndCAwIF1dIHx8IGRpZSAibm8gcmVjaXBpZW50IG51bWJlcnMgY29uZmlndXJl
+ZCIKIyBUaGUgcGlja2VkIGZpZWxkcywgd2l0aCB0aGUgXG4gdGhlIHBpY2tlciBzdG9yZXMgdHVy
+bmVkIGludG8gcmVhbCBuZXdsaW5lcy4KSEVBRD0kKGVjaG8gLWUgIiRUSVRMRSIpCkJPRFk9JChl
+Y2hvIC1lICIkTUVTU0FHRSIpClRFWFQ9JChob3N0bmFtZSkKW1sgLW4gJEhFQUQgXV0gJiYgVEVY
+VD0iJFRFWFQ6ICRIRUFEIgpbWyAtbiAkQk9EWSBdXSAmJiBURVhUPSQocHJpbnRmICclc1xuJXMn
+ICIkVEVYVCIgIiRCT0RZIikKIyBBbiBTTVMgaXMgYmlsbGVkIHBlciBzZWdtZW50LCBhbmQgYSBu
+b3RpZmljYXRpb24gYm9keSBjYW4gcnVuIHRvIHBhZ2VzLgppZiBbWyAkTUFYX0xFTkdUSCA9fiBe
+WzAtOV0rJCAmJiAkTUFYX0xFTkdUSCAtZ3QgMyAmJiAkeyNURVhUfSAtZ3QgJE1BWF9MRU5HVEgg
+XV07IHRoZW4KVEVYVD0iJHtURVhUOjA6JCgoTUFYX0xFTkdUSC0zKSl9Li4uIgpzYXkgImN1dCB0
+aGUgdGV4dCB0byAkTUFYX0xFTkdUSCBjaGFyYWN0ZXJzIgpmaQojIExvZyBpbi4gVGhlIEFQSSBT
+ZXJ2ZXIgaGFuZHMgb3V0IGEgYmVhcmVyIHRva2VuOyBub3RoaW5nIGlzIGNhY2hlZCwgc28gYQoj
+IG5vdGlmaWNhdGlvbiBuZXZlciBsZWF2ZXMgc3RhdGUgb24gdGhlIGZsYXNoIGRyaXZlLgpDUkVE
+Uz0kKGpxIC1jbiAtLWFyZyBlICIkRU1BSUwiIC0tYXJnIHAgIiRQQVNTV09SRCIgJ3tlbWFpbDok
+ZSxwYXNzd29yZDokcH0nKQpSRVBMWT0kKGN1cmwgLXNTIC1tIDE1IC1IICdDb250ZW50LVR5cGU6
+IGFwcGxpY2F0aW9uL2pzb24nIC1kICIkQ1JFRFMiICIkQVBJL2FwaS9hdXRoL2xvZ2luIikgfHwg
+ZGllICJjYW5ub3QgcmVhY2ggJEFQSSIKVE9LRU49JChqcSAtciAnLmFjY2Vzc190b2tlbiAvLyBl
+bXB0eScgPDw8IiRSRVBMWSIgMj4vZGV2L251bGwpCltbIC1uICRUT0tFTiBdXSB8fCBkaWUgImxv
+Z2luIGZhaWxlZDogJChqcSAtciAnLmVycm9yIC8vICJjaGVjayB0aGUgZW1haWwgYW5kIHBhc3N3
+b3JkIicgPDw8IiRSRVBMWSIgMj4vZGV2L251bGwpIgojIFF1ZXVlIHRoZSBTTVMuIExlYXZpbmcg
+ZGV2aWNlX2lkIG91dCBsZXRzIHRoZSBBUEkgU2VydmVyIHBpY2sgYSBwaG9uZSB0aGF0IGlzCiMg
+b25saW5lOyBsZWF2aW5nIHNpbV9udW1iZXIgb3V0IGxldHMgdGhlIHBob25lIHVzZSBpdHMgZGVm
+YXVsdCBTSU0uClNFTkQ9JChqcSAtY24gLS1hcmdqc29uIHRvICIkVE8iIC0tYXJnIHRleHQgIiRU
+RVhUIiAne3R5cGU6InNtcyIscGhvbmVfbnVtYmVyczokdG8sdGV4dF9tZXNzYWdlOiR0ZXh0fScp
+CltbIC1uICRERVZJQ0VfSUQgJiYgJERFVklDRV9JRCAhPSBhdXRvIF1dICYmIFNFTkQ9JChqcSAt
+YyAtLWFyZyBkICIkREVWSUNFX0lEIiAnLit7ZGV2aWNlX2lkOiRkfScgPDw8IiRTRU5EIikKW1sg
+JFNJTV9TTE9UID1+IF5bMC05XSskIF1dICYmIFNFTkQ9JChqcSAtYyAtLWFyZ2pzb24gcyAiJFNJ
+TV9TTE9UIiAnLit7c2ltX251bWJlcjokc30nIDw8PCIkU0VORCIpCk9VVD0kKG1rdGVtcCkKQ09E
+RT0kKGN1cmwgLXNTIC1tIDIwIC1vICIkT1VUIiAtdyAnJXtodHRwX2NvZGV9JyAtSCAiQXV0aG9y
+aXphdGlvbjogQmVhcmVyICRUT0tFTiIgLUggJ0NvbnRlbnQtVHlwZTogYXBwbGljYXRpb24vanNv
+bicgLWQgIiRTRU5EIiAiJEFQSS9hcGkvbWVzc2FnZXMiKQpSRVBMWT0kKDwiJE9VVCIpCnJtIC1m
+ICIkT1VUIgpjYXNlICRDT0RFIGluCjIwKikgc2F5ICJxdWV1ZWQgZm9yICQoanEgLXIgJ2pvaW4o
+IiwgIiknIDw8PCIkVE8iKSI7IGV4aXQgMDs7CjQwMSkgZGllICJ0aGUgQVBJIFNlcnZlciByZWpl
+Y3RlZCB0aGUgYWNjb3VudCI7Owplc2FjCmRpZSAidGhlIEFQSSBTZXJ2ZXIgYW5zd2VyZWQgSFRU
+UCAkQ09ERSAkKGpxIC1yICcuZXJyb3IgLy8gZW1wdHknIDw8PCIkUkVQTFkiIDI+L2Rldi9udWxs
+KSIKICAgIF1dPgogIDwvU2NyaXB0Pgo8L0FnZW50Pgo=
+AGENT_DEFINITION
+
+base64 -d > /boot/config/plugins/gsmnode/gsmnode.png <<'AGENT_ICON'
+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
+AGENT_ICON
+
+install -D -m 644 /boot/config/plugins/gsmnode/gsmnode.xml /usr/local/emhttp/plugins/dynamix/agents/gsmnode.xml
+install -D -m 644 /boot/config/plugins/gsmnode/gsmnode.png /usr/local/emhttp/plugins/dynamix/icons/gsmnode.png
+]]></INLINE>
+</FILE>
+
+
+<!-- POST-INSTALL: say what to do next. An agent does nothing until it is filled
+     in and switched on, and neither happens here. -->
+<FILE Run="/bin/bash">
+<INLINE><![CDATA[
+echo
+echo "-----------------------------------------------------------"
+echo " gsmnode is installed."
+echo
+echo " Two things left, both in the webGUI:"
+echo
+echo " 1. Settings -> Notifications -> Notification Agents -> gsmnode"
+echo "    Fill in the API Server, the account and who to text, set"
+echo "    Agent function to Enabled, and Apply. Then press Test."
+echo
+echo " 2. Settings -> Notifications -> Notification Settings"
+echo "    Tick Agents on the notification levels you want texted."
+echo
+echo " Apache License 2.0 - https://github.com/freefall-dev/gsmnode"
+echo "-----------------------------------------------------------"
+echo
+]]></INLINE>
+</FILE>
+
+
+<!-- REMOVE: take the configured agent too. It is a self-contained script that
+     holds the account password and would keep sending texts after the plugin
+     that explains it is gone. -->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE><![CDATA[
+rm -f /usr/local/emhttp/plugins/dynamix/agents/gsmnode.xml
+rm -f /usr/local/emhttp/plugins/dynamix/icons/gsmnode.png
+rm -f /boot/config/plugins/dynamix/notifications/agents/gsmnode.sh
+rm -f /boot/config/plugins/dynamix/notifications/agents-disabled/gsmnode.sh
+rm -rf /boot/config/plugins/gsmnode
+rm -f /boot/config/plugins/gsmnode.plg
+
+echo
+echo "gsmnode is removed, and so are the agent and the account it was told to send as."
+echo
+]]></INLINE>
+</FILE>
+
+</PLUGIN>
