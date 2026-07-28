@@ -1,6 +1,6 @@
 # Publishing
 
-How this folder becomes `github.com/freefall-dev/gsmnode-unraid`, and how people
+How this folder becomes `github.com/gsmnode/gsmnode-unraid`, and how people
 find it from Unraid.
 
 Unraid installs a plugin from a URL that must serve the `.plg` and nothing else,
@@ -10,7 +10,7 @@ its own rather than moved. `gsmnode.plg` sits at the root of this folder, which
 is the root of that repository, which makes the install URL:
 
 ```
-https://raw.githubusercontent.com/freefall-dev/gsmnode-unraid/main/gsmnode.plg
+https://raw.githubusercontent.com/gsmnode/gsmnode-unraid/main/gsmnode.plg
 ```
 
 That URL is baked into the plugin as its `pluginURL`, which is where **Update**
@@ -19,7 +19,7 @@ it, so pick the name once.
 
 ## One-time GitHub setup
 
-1. Create **`freefall-dev/gsmnode-unraid`**, public. Ideally with nothing added
+1. Create **`gsmnode/gsmnode-unraid`**, public. Ideally with nothing added
    — no README, no `.gitignore`, no license — because this folder supplies all
    three.
 
@@ -48,7 +48,7 @@ it, so pick the name once.
 From the monorepo root, once:
 
 ```sh
-git remote add github-gsmnode-unraid https://github.com/freefall-dev/gsmnode-unraid.git
+git remote add github-gsmnode-unraid https://github.com/gsmnode/gsmnode-unraid.git
 ```
 
 Then, whenever this folder changes and is committed:
@@ -91,7 +91,7 @@ A GitHub release is optional and changes nothing about updates, but tagging is
 worth it so an install URL can be pinned to a commit if one ever needs to be:
 
 ```sh
-gh release create 2026.07.24 --repo freefall-dev/gsmnode-unraid --generate-notes
+gh release create 2026.07.24 --repo gsmnode/gsmnode-unraid --generate-notes
 ```
 
 ## Get it into Community Applications

@@ -12,7 +12,7 @@
 # this folder contains.
 #
 # First run, once:
-#   git remote add github-gsmnode-unraid https://github.com/freefall-dev/gsmnode-unraid.git
+#   git remote add github-gsmnode-unraid https://github.com/gsmnode/gsmnode-unraid.git
 #
 # Then, from the repo root:
 #   sh scripts/publish-unraid-plugin.sh
@@ -29,7 +29,7 @@ cd "$(dirname "$0")/.."
 
 if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
 	echo "No '$REMOTE' remote. Add it first:" >&2
-	echo "  git remote add $REMOTE https://github.com/freefall-dev/gsmnode-unraid.git" >&2
+	echo "  git remote add $REMOTE https://github.com/gsmnode/gsmnode-unraid.git" >&2
 	exit 1
 fi
 
@@ -63,4 +63,4 @@ echo "Done. Unraid offers version $version to anyone who already has it installe
 echo "as soon as GitHub serves the new file — no tag or release is needed."
 echo
 echo "To tag it anyway, so an install can be pinned to this commit:"
-echo "  gh release create $version --repo freefall-dev/gsmnode-unraid --generate-notes"
+echo "  gh release create $version --repo gsmnode/gsmnode-unraid --generate-notes"

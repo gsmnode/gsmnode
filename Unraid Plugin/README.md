@@ -24,7 +24,7 @@ Agents page. The plugin refuses to install on anything older.
 **Plugins → Install Plugin**, paste this, and **Install**:
 
 ```
-https://raw.githubusercontent.com/freefall-dev/gsmnode-unraid/main/gsmnode.plg
+https://raw.githubusercontent.com/gsmnode/gsmnode-unraid/main/gsmnode.plg
 ```
 
 It is one self-contained file: nothing is downloaded afterwards, and no package

@@ -9,7 +9,7 @@
 <!ENTITY author    "FreeFallDev">
 <!ENTITY version   "2026.07.24">
 <!ENTITY launch    "Settings/Notifications">
-<!ENTITY gitURL    "https://raw.githubusercontent.com/freefall-dev/gsmnode-unraid/main">
+<!ENTITY gitURL    "https://raw.githubusercontent.com/gsmnode/gsmnode-unraid/main">
 <!ENTITY pluginURL "&gitURL;/&name;.plg">
 ]>
 
@@ -21,7 +21,7 @@
   pluginURL="&pluginURL;"
   min="6.10.0"
   icon="mobile"
-  support="https://github.com/freefall-dev/gsmnode/issues">
+  support="https://github.com/gsmnode/gsmnode/issues">
 
 <CHANGES>
 ##gsmnode
@@ -299,7 +299,7 @@ echo
 echo " 2. Settings -> Notifications -> Notification Settings"
 echo "    Tick Agents on the notification levels you want texted."
 echo
-echo " Apache License 2.0 - https://github.com/freefall-dev/gsmnode"
+echo " Apache License 2.0 - https://github.com/gsmnode/gsmnode"
 echo "-----------------------------------------------------------"
 echo
 ]]></INLINE>
