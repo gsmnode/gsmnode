@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>gsmnode</Name>
+  <Repository>tajniak81/gsmnode-aio:latest</Repository>
+  <Registry>https://github.com/gsmnode/gsmnode</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/gsmnode/gsmnode/issues</Support>
+  <Project>https://github.com/gsmnode/gsmnode</Project>
+  <Overview>gsmnode all-in-one: PocketBase, the API Server and the Web App in one container. Turn a spare Android phone into an SMS/call gateway and drive it from a self-hosted web app or the REST API. &#xD;
+&#xD;
+On first boot PocketBase upserts its superuser from PB_ADMIN_*, the API Server reconciles the database schema, and — if you fill them in — creates the first app login from GSMNODE_SUPERADMIN_*. Every step is idempotent, so restarts are safe. &#xD;
+&#xD;
+Only GSMNODE_SUPERADMIN has access to API Server panel.&#xD;
+&#xD;
+PocketBase admin:  http://[IP]:[PORT:8070]/_/&#xD;
+API Server + panel:  http://[IP]:[PORT:8080]/&#xD;
+Web App:  http://[IP]:[PORT:8090]/&#xD;
+&#xD;
+Android Phone Agent: https://github.com/gsmnode/phone-agent/releases&#xD;
+&#xD;
+Android Phone App: https://github.com/gsmnode/phone-app/releases&#xD;
+&#xD;
+Keep both appdata paths on persistent storage — the /data volume holds plugin config with credentials such as IMAP/SMTP logins, so treat it like the database and back it up.</Overview>
+  <Category>Network:Messenger Tools:Utilities Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:8090]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/tajniak81/unraid-docker-templates/refs/heads/main/gsmnode-aio/gsmnode-aio.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/tajniak81/unraid-docker-templates/refs/heads/main/gsmnode-aio/icon/gsmnode-aio.png</Icon>
+  <ExtraParams></ExtraParams>
+  <PostArgs></PostArgs>
+  <CPUset></CPUset>
+  <DateInstalled></DateInstalled>
+  <DonateText></DonateText>
+  <DonateLink></DonateLink>
+  <Description>gsmnode all-in-one (PocketBase + API Server + Web App) in a single container. Requires an image you build and push yourself from Docker-AIO/Dockerfile — see the Overview.</Description>
+  <Config Name="Web UI Port" Target="80" Default="8090" Mode="tcp" Description="Host port for the Web App (the WebUI link above). Container port 80." Type="Port" Display="always" Required="true" Mask="false">8090</Config>
+  <Config Name="PocketBase Port" Target="8070" Default="8070" Mode="tcp" Description="Host port for the PocketBase admin UI / API, reached at /_/. Container port 8070." Type="Port" Display="always" Required="true" Mask="false">8070</Config>
+  <Config Name="API Server Port" Target="8080" Default="8080" Mode="tcp" Description="Host port for the API Server and its embedded admin panel (served at /). Container port 8080." Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="Database (pb_data)" Target="/pb/pb_data" Default="/mnt/user/appdata/gsmnode/pb_data" Mode="rw" Description="PocketBase data directory — the database. Must persist across container recreates." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/gsmnode/pb_data</Config>
+  <Config Name="App data (/data)" Target="/data" Default="/mnt/user/appdata/gsmnode/data" Mode="rw" Description="API Server state: plugin enable-state and config (plugins.json) plus settings the panel persists. Holds plugin credentials such as IMAP/SMTP logins, so back it up with the database." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/gsmnode/data</Config>
+  <Config Name="PocketBase Admin Email" Target="PB_ADMIN_EMAIL" Default="" Mode="" Description="REQUIRED. PocketBase superuser, created/updated on first boot. The API Server uses this to reach the database. Distinct from the app login below." Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="PocketBase Admin Password" Target="PB_ADMIN_PASSWORD" Default="" Mode="" Description="REQUIRED. Password for the PocketBase superuser. Use a long, unique value." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Super-Admin Email" Target="GSMNODE_SUPERADMIN_EMAIL" Default="" Mode="" Description="First app user, created on boot with role superadmin if no user with this email exists. This is the account you log in to the Web App with. Leave blank to skip and create the first user by hand." Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Super-Admin Password" Target="GSMNODE_SUPERADMIN_PASSWORD" Default="" Mode="" Description="Password for the app super-admin. Only used when the email above is also set. Use a long, unique value." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Super-Admin Name" Target="GSMNODE_SUPERADMIN_NAME" Default="Administrator" Mode="" Description="Display name for the app super-admin created above." Type="Variable" Display="advanced" Required="false" Mask="false">Administrator</Config>
+  <Config Name="Bootstrap Schema" Target="PB_BOOTSTRAP" Default="true" Mode="" Description="Reconcile the database schema and create the super-admin on boot (idempotent). Set to false once the database is established to skip it." Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="Message TTL" Target="MESSAGE_TTL" Default="5m" Mode="" Description="How long a message/call may stay unprocessed before it's marked Failed (Go duration, e.g. 5m, 30s, 1h)." Type="Variable" Display="advanced" Required="false" Mask="false">5m</Config>
+  <Config Name="CORS Allowed Origins" Target="CORS_ALLOW_ORIGINS" Default="http://localhost:8090" Mode="" Description="Allowed origin(s) for browsers that call the API Server directly. Match your public Web App URL, e.g. http://tower.local:8090. Comma-separate several." Type="Variable" Display="advanced" Required="false" Mask="false">http://localhost:8090</Config>
+</Container>
