@@ -120,7 +120,7 @@ cd gsmnode
    (`flutter pub get`, `flutter run`, then point it at the API Server on the
    sign-in screen).
 6. **Home Assistant Plugin** (optional) — install it through HACS from
-   [`freefall-dev/gsmnode-ha`](https://github.com/freefall-dev/gsmnode-ha), or
+   [`gsmnode/gsmnode-ha`](https://github.com/gsmnode/gsmnode-ha), or
    copy `Home Assistant Plugin/custom_components/gsmnode/` into
    `<config>/custom_components/` by hand. Restart Home Assistant, then add
    **gsmnode** under Settings → Devices & Services. See

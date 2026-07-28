@@ -1,6 +1,6 @@
 # Publishing
 
-How this folder becomes `github.com/freefall-dev/gsmnode-ha`, and how that
+How this folder becomes `github.com/gsmnode/gsmnode-ha`, and how that
 repository gets into HACS.
 
 HACS installs from a repository whose **root** holds
@@ -13,7 +13,7 @@ rather than moved. The monorepo stays the source of truth.
 Everything on this list is checked by HACS, either by its validation action or
 by the review on the `hacs/default` pull request.
 
-1. Create **`freefall-dev/gsmnode-ha`**, public. Ideally with nothing added — no
+1. Create **`gsmnode/gsmnode-ha`**, public. Ideally with nothing added — no
    README, no `.gitignore`, no license — because this folder supplies all three.
 
    If GitHub's "Add a license" or "Add a README" box was ticked, the repository
@@ -43,7 +43,7 @@ by the review on the `hacs/default` pull request.
 From the monorepo root, once:
 
 ```sh
-git remote add github-gsmnode-ha https://github.com/freefall-dev/gsmnode-ha.git
+git remote add github-gsmnode-ha https://github.com/gsmnode/gsmnode-ha.git
 ```
 
 Then, whenever this folder changes and is committed:
@@ -69,7 +69,7 @@ HACS reads **releases**, not tags — a tag on its own is invisible to it, and t
 3. Tag the pushed commit on GitHub and publish a release from it:
 
    ```sh
-   gh release create v3.3.1 --repo freefall-dev/gsmnode-ha --generate-notes
+   gh release create v3.3.1 --repo gsmnode/gsmnode-ha --generate-notes
    ```
 
    Keep the tag and the manifest `version` in step; HACS shows the tag as the
@@ -85,7 +85,7 @@ to be turned down.
 2. Publish at least one release (above).
 3. Open a pull request against
    [`hacs/default`](https://github.com/hacs/default) adding
-   `freefall-dev/gsmnode-ha` to the `integration` file, **in alphabetical
+   `gsmnode/gsmnode-ha` to the `integration` file, **in alphabetical
    order** — the review checks the sorting.
 4. The automated review then verifies the description, topics, issues, release,
    brand assets and manifest. Brands are already satisfied by

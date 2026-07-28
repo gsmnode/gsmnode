@@ -44,12 +44,12 @@ subentries, which older versions cannot show.
 
 ### With HACS
 
-[![Open your Home Assistant instance and open this repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=freefall-dev&repository=gsmnode-ha&category=integration)
+[![Open your Home Assistant instance and open this repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=gsmnode&repository=gsmnode-ha&category=integration)
 
 Until it lands in the HACS default store, add it as a custom repository:
 
 1. **HACS → ⋮ (top right) → Custom repositories**.
-2. Repository `https://github.com/freefall-dev/gsmnode-ha`, type **Integration**
+2. Repository `https://github.com/gsmnode/gsmnode-ha`, type **Integration**
    → **Add**.
 3. Search HACS for **gsmnode** → **Download**.
 4. **Restart Home Assistant** (Settings → System → Restart).

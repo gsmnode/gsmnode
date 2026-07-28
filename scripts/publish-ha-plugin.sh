@@ -12,7 +12,7 @@
 # this folder contains.
 #
 # First run, once:
-#   git remote add github-gsmnode-ha https://github.com/freefall-dev/gsmnode-ha.git
+#   git remote add github-gsmnode-ha https://github.com/gsmnode/gsmnode-ha.git
 #
 # Then, from the repo root:
 #   sh scripts/publish-ha-plugin.sh
@@ -29,7 +29,7 @@ cd "$(dirname "$0")/.."
 
 if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
 	echo "No '$REMOTE' remote. Add it first:" >&2
-	echo "  git remote add $REMOTE https://github.com/freefall-dev/gsmnode-ha.git" >&2
+	echo "  git remote add $REMOTE https://github.com/gsmnode/gsmnode-ha.git" >&2
 	exit 1
 fi
 
@@ -51,4 +51,4 @@ echo "GitHub *release* — not just a tag — is what HACS reads):"
 echo "  git push $REMOTE $split_ref:refs/heads/$BRANCH"
 echo "  gh release create v$(sed -n 's/.*\"version\": \"\([^\"]*\)\".*/\1/p' \
 	"$PREFIX/custom_components/gsmnode/manifest.json") \\"
-echo "      --repo freefall-dev/gsmnode-ha --generate-notes"
+echo "      --repo gsmnode/gsmnode-ha --generate-notes"
