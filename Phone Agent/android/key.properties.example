@@ -1,0 +1,19 @@
+# Release signing config for the Phone Agent.
+#
+# Copy this file to `key.properties` (same folder) and fill in real values.
+# `key.properties` and the keystore itself are gitignored — never commit them,
+# this repo is public. If this file is absent, release builds fall back to
+# debug signing.
+#
+# Generate an upload keystore once (keep it OUTSIDE the repo and back it up —
+# losing it means you can no longer update the Play Store listing):
+#
+#   keytool -genkey -v -keystore gsmnode-upload.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# storeFile is resolved relative to the android/ folder.
+
+storePassword=changeme
+keyPassword=changeme
+keyAlias=upload
+storeFile=/absolute/path/to/gsmnode-upload.jks

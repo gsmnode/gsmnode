@@ -55,6 +55,47 @@ Note the `android_overlay/` folder travels with the split, so the native SMS/MMS
 and call bridge is reproducible from the published repo exactly as it is here —
 see the README's *Set up* section.
 
+## Build a production version
+
+The app is Flutter. From this folder:
+
+```sh
+flutter build apk --release        # build/app/outputs/flutter-apk/app-release.apk
+flutter build appbundle --release  # build/app/outputs/bundle/release/app-release.aab
+```
+
+An APK is what people sideload from a GitHub release; an AAB (App Bundle) is
+what Google Play requires.
+
+### Release signing
+
+Release builds are signed with your own upload key when
+`android/key.properties` is present, and fall back to debug signing when it is
+not (so `flutter run --release` works out of the box). A debug-signed APK is
+fine for sideloading; Google Play rejects it.
+
+To sign for real:
+
+1. Generate an upload keystore **once**, keep it outside the repo and back it
+   up — losing it means you can no longer update the Play listing:
+
+   ```sh
+   keytool -genkey -v -keystore gsmnode-upload.jks \
+     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+   ```
+2. Copy `android/key.properties.example` to `android/key.properties` and fill
+   in the passwords, alias and `storeFile` path.
+
+`key.properties`, `*.jks` and `*.keystore` are gitignored — never commit them,
+this repo is public.
+
+## Publish to Google Play
+
+1. Build a signed AAB (`flutter build appbundle --release`).
+2. In the Play Console, create the app under the `app.gsmnode.phoneagent`
+   application id, complete the store listing, and upload the `.aab` — roll out
+   to an internal-testing track first.
+
 ## Cut a release
 
 The app's version is `version` in `pubspec.yaml` (`major.minor.patch+build`).
