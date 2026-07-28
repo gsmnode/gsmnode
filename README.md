@@ -35,7 +35,7 @@
 </div>
 
 Turn Android phones into a programmable SMS gateway, controlled through a web UI
-and a REST API — inspired by [android-sms-gateway](https://docs.sms-gate.app/).
+and a REST API.
 
 The shared design system is signal-green `#2E9E6B` on ink, Space Grotesk
 (display) · IBM Plex Sans (body) · JetBrains Mono (code/labels), the lowercase
@@ -53,16 +53,16 @@ to the API Server.
 
 ```
 ┌────────────┐        ┌──────────────────┐        ┌──────────────┐
-│  Web App   │───────►│                  │───────►│              │
+│  Web App   │───────►│                  │        │              │
 │ (Vue/Go)   │        │                  │        │              │
 ├────────────┤        │                  │        │              │
 │ Phone App  │───────►│                  │        │              │
 │ (Flutter)  │        │   API Server     │        │  PocketBase  │
 ├────────────┤        │      (Go)        │        │    (:8028)   │
-│Phone Agent │───────►│                  │        │              │
+│Phone Agent │───────►│                  │───────►│              │
 │ (Flutter)  │        │                  │        │              │
 ├────────────┤        │                  │        │              │
-│ HA plugin  │◄──────►│                  │───────►│              │
+│ HA plugin  │◄──────►│                  │        │              │
 │  (Python)  │        │                  │        │              │
 ├────────────┤        │                  │        │              │
 │Unraid plug.│───────►│                  │        │              │
