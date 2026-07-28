@@ -1,4 +1,38 @@
-# gsmnode
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/png/lockup-horizontal-white.png">
+  <img src="assets/png/lockup-horizontal-color.png" alt="gsmnode" width="440">
+</picture>
+
+<br>
+<br>
+
+<p>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache_2.0-2E9E6B?style=flat-square&labelColor=12161C"></a>
+  <img alt="API Server" src="https://img.shields.io/badge/API_Server-Go-2E9E6B?style=flat-square&labelColor=12161C&logo=go&logoColor=white">
+  <img alt="Web App" src="https://img.shields.io/badge/Web_App-Vue_3-2E9E6B?style=flat-square&labelColor=12161C&logo=vuedotjs&logoColor=white">
+  <img alt="Phone Apps" src="https://img.shields.io/badge/Phone_Apps-Flutter-2E9E6B?style=flat-square&labelColor=12161C&logo=flutter&logoColor=white">
+  <img alt="Data" src="https://img.shields.io/badge/Data-PocketBase-2E9E6B?style=flat-square&labelColor=12161C&logo=pocketbase&logoColor=white">
+  <img alt="Deploy" src="https://img.shields.io/badge/Deploy-Docker-2E9E6B?style=flat-square&labelColor=12161C&logo=docker&logoColor=white">
+</p>
+
+<p>
+  <a href="#surfaces"><b>Surfaces</b></a> &nbsp;·&nbsp;
+  <a href="#screenshots"><b>Screenshots</b></a> &nbsp;·&nbsp;
+  <a href="#run-order"><b>Run&nbsp;order</b></a> &nbsp;·&nbsp;
+  <a href="#deploy-with-docker"><b>Docker</b></a> &nbsp;·&nbsp;
+  <a href="#webhooks"><b>Webhooks</b></a> &nbsp;·&nbsp;
+  <a href="#per-surface-docs"><b>Docs</b></a>
+</p>
+
+<p>
+  <a href="Phone%20App/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/badges/get-phone-app-dark.png"><img alt="Download the Phone App" src="assets/badges/get-phone-app.png" height="54"></picture></a>
+  &nbsp;&nbsp;
+  <a href="Phone%20Agent/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/badges/get-phone-agent-dark.png"><img alt="Download the Phone Agent" src="assets/badges/get-phone-agent.png" height="54"></picture></a>
+</p>
+
+</div>
 
 Turn Android phones into a programmable SMS gateway, controlled through a web UI
 and a REST API — inspired by [android-sms-gateway](https://docs.sms-gate.app/).
@@ -70,6 +104,23 @@ so it is configured under Settings → Notifications like those are.
 | [`Home Assistant Plugin/`](Home%20Assistant%20Plugin/) | HA custom component (Python) | — | ✅ UI-only (no YAML): config flow, `send_sms`/`call` services, gateway + per-phone sensors, incoming events, notify entity, optional sidebar panel |
 | [`Unraid Plugin/`](Unraid%20Plugin/) | Unraid plugin (`.plg` + bash) | — | ✅ Built & unit-tested; not yet installed on a live server |
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="64%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/web-app-dark.png"><img src="assets/screenshots/web-app.png" alt="Web App — dashboard, messages, inbox, devices, plugins"></picture></td>
+    <td width="36%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/phone-app-dark.png"><img src="assets/screenshots/phone-app.png" alt="Phone App — gateway mirror"></picture></td>
+  </tr>
+  <tr>
+    <td width="64%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/api-panel-dark.png"><img src="assets/screenshots/api-panel.png" alt="API panel — endpoint reference, plugins, admin"></picture></td>
+    <td width="36%" valign="top"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/phone-agent-dark.png"><img src="assets/screenshots/phone-agent.png" alt="Phone Agent — sends/receives SMS and calls"></picture></td>
+  </tr>
+</table>
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/home-assistant-dark.png"><img src="assets/screenshots/home-assistant.png" alt="Home Assistant — services, sensors, events, sidebar" width="100%"></picture></p>
+
+> Placeholders — drop real captures into [`assets/screenshots/`](assets/screenshots/) and they render here.
+
 ## PocketBase collections
 
 Managed by `API Server/scripts/setup-pocketbase.mjs` (idempotent):
@@ -92,7 +143,7 @@ and bring the server side up in containers instead, jump to
 [Deploy with Docker](#deploy-with-docker).
 
 ```powershell
-git clone https://github.com/freefall-dev/gsmnode.git
+git clone https://github.com/gsmnode/gsmnode.git
 cd gsmnode
 ```
 
@@ -133,14 +184,14 @@ cd gsmnode
    [`Home Assistant Plugin/PUBLISHING.md`](Home%20Assistant%20Plugin/PUBLISHING.md).
 7. **Unraid Plugin** (optional) — on the Unraid server, **Plugins → Install
    Plugin**, and paste
-   `https://raw.githubusercontent.com/freefall-dev/gsmnode-unraid/main/gsmnode.plg`.
+   `https://raw.githubusercontent.com/gsmnode/gsmnode-unraid/main/gsmnode.plg`.
    Then fill the agent in under **Settings → Notifications → Notification
    Agents**, and tick **Agents** on the severities you want texted. See
    [`Unraid Plugin/README.md`](Unraid%20Plugin/README.md).
 
    Published the same way, from
    [`scripts/publish-unraid-plugin.sh`](scripts/publish-unraid-plugin.sh) to
-   [`freefall-dev/gsmnode-unraid`](https://github.com/freefall-dev/gsmnode-unraid) —
+   [`gsmnode/gsmnode-unraid`](https://github.com/gsmnode/gsmnode-unraid) —
    Unraid installs a plugin from a URL that serves the `.plg` and nothing else.
 
 ## Deploy with Docker
