@@ -74,7 +74,7 @@ the API Server polls it to show this app's health on its own panel.
 [`docker-compose.yml`](docker-compose.yml) here runs the BFF alone, pointing
 `API_BASE` at an API Server on the host. For the full stack, use
 [`../Docker/`](../Docker/) or the single-container
-[`../Docker AIO/`](../Docker%20AIO/) — in the AIO image nginx takes the BFF's
+[`../Docker-AIO/`](../Docker-AIO/) — in the AIO image nginx takes the BFF's
 place, serving the SPA and proxying `/api/` to the API Server in the same
 container.
 

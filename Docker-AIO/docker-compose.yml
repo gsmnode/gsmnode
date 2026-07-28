@@ -9,7 +9,7 @@ services:
     build:
       # Project root (one level up from this compose file).
       context: ..
-      dockerfile: Docker AIO/Dockerfile
+      dockerfile: Docker-AIO/Dockerfile
       args:
         # Empty -> bundle uses same-origin "/api", proxied internally by nginx.
         VITE_API_BASE: "${VITE_API_BASE:-}"

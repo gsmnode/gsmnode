@@ -214,12 +214,12 @@ both carry a `docker-compose.yml` that builds from this working tree, and a
 | | Layout | Use when |
 |---|---|---|
 | [`Docker/`](Docker/) | Three containers — PocketBase, API Server, Web App | You want to scale, replace or upgrade the pieces independently. The only one with published images, so the only one you can run without building |
-| [`Docker AIO/`](Docker%20AIO/) | One container, all three under supervisord (nginx serves the SPA) | One host, one thing to run |
+| [`Docker-AIO/`](Docker-AIO/) | One container, all three under supervisord (nginx serves the SPA) | One host, one thing to run |
 
 To build from this tree:
 
 ```powershell
-cd Docker                      # or "Docker AIO"
+cd Docker                      # or Docker-AIO
 Copy-Item .env.example .env
 # edit .env: PB_ADMIN_* and GSMNODE_SUPERADMIN_* at minimum
 docker compose up -d --build
@@ -246,7 +246,7 @@ safe.
 ### Published images
 
 Three images, on both registries, `linux/amd64` only — on arm64 (Raspberry Pi,
-Apple Silicon) build from source with the first recipe above. `Docker AIO/` has
+Apple Silicon) build from source with the first recipe above. `Docker-AIO/` has
 no published image; it always builds.
 
 | | GHCR (the default) | Docker Hub |

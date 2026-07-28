@@ -95,7 +95,7 @@ Health check: `GET http://localhost:8080/api/health`.
 external PocketBase, reaching a Web App on the host through
 `host.docker.internal`. For the full stack — PocketBase and the Web App
 alongside it — use [`../Docker/`](../Docker/) or the single-container
-[`../Docker AIO/`](../Docker%20AIO/) instead.
+[`../Docker-AIO/`](../Docker-AIO/) instead.
 
 The image runs unprivileged from `/data`, and that is where `plugins.json` and
 the `.env` the panel writes back to end up, so `/data` is a volume in every

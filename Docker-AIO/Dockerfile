@@ -5,7 +5,7 @@
 # The build context MUST be the project root so this file can reach both
 # "API Server/" and "Web App/". Build it with:
 #
-#   docker build -f "Docker AIO/Dockerfile" -t gsmnode-aio .
+#   docker build -f Docker-AIO/Dockerfile -t gsmnode-aio .
 #
 # Run it (all three services start together):
 #
