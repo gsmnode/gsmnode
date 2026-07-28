@@ -31,7 +31,7 @@ Home Assistant Integration: https://github.com/gsmnode/gsmnode-ha&#xD;
 &#xD;
 Keep both appdata paths on persistent storage — the /data volume holds plugin config with credentials such as IMAP/SMTP logins, so treat it like the database and back it up.</Overview>
   <Category>Network:Messenger Tools:Utilities Productivity:</Category>
-  <WebUI>http://[IP]:[PORT:8090]/</WebUI>
+  <WebUI>http://[IP]:[PORT:80]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/tajniak81/unraid-docker-templates/refs/heads/main/gsmnode-aio/gsmnode-aio.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/tajniak81/unraid-docker-templates/refs/heads/main/gsmnode-aio/icon/gsmnode-aio.png</Icon>
   <ExtraParams></ExtraParams>
