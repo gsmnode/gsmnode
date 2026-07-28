@@ -15,13 +15,19 @@ On first boot PocketBase upserts its superuser from PB_ADMIN_*, the API Server r
 &#xD;
 Only GSMNODE_SUPERADMIN has access to API Server panel.&#xD;
 &#xD;
-PocketBase admin:  http://[IP]:[PORT:8070]/_/&#xD;
-API Server + panel:  http://[IP]:[PORT:8080]/&#xD;
-Web App:  http://[IP]:[PORT:8090]/&#xD;
+PocketBase admin:  http://IP:8070]/_/&#xD;
+API Server + panel:  http://IP:8080/&#xD;
+Web App:  http://IP:8090/&#xD;
+&#xD;
+https://github.com/gsmnode/gsmnode&#xD;
 &#xD;
 Android Phone Agent: https://github.com/gsmnode/phone-agent/releases&#xD;
 &#xD;
 Android Phone App: https://github.com/gsmnode/phone-app/releases&#xD;
+&#xD;
+Unraid Plugin: https://github.com/gsmnode/gsmnode-unraid&#xD;
+&#xD;
+Home Assistant Integration: https://github.com/gsmnode/gsmnode-ha&#xD;
 &#xD;
 Keep both appdata paths on persistent storage — the /data volume holds plugin config with credentials such as IMAP/SMTP logins, so treat it like the database and back it up.</Overview>
   <Category>Network:Messenger Tools:Utilities Productivity:</Category>
