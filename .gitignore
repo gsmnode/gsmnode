@@ -33,6 +33,9 @@ __pycache__/
 # Per-machine editor/agent state (contains local paths and hostnames)
 .claude/settings.local.json
 
+# Local build/publish scripts
+scripts/
+
 # OS / editor
 .DS_Store
 Thumbs.db
