@@ -27,9 +27,9 @@
 </p>
 
 <p>
-  <a href="Phone%20App/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/badges/get-phone-app-dark.png"><img alt="Download the Phone App" src="assets/badges/get-phone-app.png" height="54"></picture></a>
+  <a href="https://github.com/gsmnode/phone-app/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/badges/get-phone-app-dark.png"><img alt="Download the Phone App" src="assets/badges/get-phone-app.png" height="54"></picture></a>
   &nbsp;&nbsp;
-  <a href="Phone%20Agent/README.md"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/badges/get-phone-agent-dark.png"><img alt="Download the Phone Agent" src="assets/badges/get-phone-agent.png" height="54"></picture></a>
+  <a href="https://github.com/gsmnode/phone-agent/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/badges/get-phone-agent-dark.png"><img alt="Download the Phone Agent" src="assets/badges/get-phone-agent.png" height="54"></picture></a>
 </p>
 
 </div>
