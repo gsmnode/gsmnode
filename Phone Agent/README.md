@@ -232,3 +232,15 @@ heartbeat, so the Web App / API can offer real slot choices.
   server-side record, so all of its send/delivery callbacks report against the
   same id and the last one wins. Mixed outcomes across recipients are therefore
   not represented faithfully.
+
+## Publishing
+
+This folder is mirrored to its own public repo,
+[`gsmnode/phone-agent`](https://github.com/gsmnode/phone-agent), so it can be
+cloned and released on its own. The monorepo stays the source of truth;
+publishing it is [PUBLISHING.md](PUBLISHING.md).
+
+## License
+
+[Apache License 2.0](LICENSE) — see [NOTICE](NOTICE) for the marks, which are
+not covered by that grant.

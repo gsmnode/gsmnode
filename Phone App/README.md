@@ -208,3 +208,15 @@ back turns every unlock attempt into a crash.
   anything else is listed by name. There is no "save to device" yet.
 - **The superadmin Plugins panel is not mirrored** — it lives in the API Server's
   own panel, and the Web App doesn't carry it either.
+
+## Publishing
+
+This folder is mirrored to its own public repo,
+[`gsmnode/phone-app`](https://github.com/gsmnode/phone-app), so it can be cloned
+and released on its own. The monorepo stays the source of truth; publishing it is
+[PUBLISHING.md](PUBLISHING.md).
+
+## License
+
+[Apache License 2.0](LICENSE) — see [NOTICE](NOTICE) for the marks, which are
+not covered by that grant.
