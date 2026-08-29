@@ -1,5 +1,8 @@
 {
   "services": {
+    "send": {
+      "service": "mdi:cellphone-message"
+    },
     "send_sms": {
       "service": "mdi:message-arrow-right"
     },

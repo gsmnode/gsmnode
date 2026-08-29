@@ -109,8 +109,19 @@ class GsmNodePhoneSensor(CoordinatorEntity[GsmNodeCoordinator], BinarySensorEnti
 
     @property
     def available(self) -> bool:
-        """Unavailable once the phone is no longer registered at all."""
-        return super().available and self._device is not None
+        """Unavailable once the phone is no longer registered — or unknowable.
+
+        When a poll cannot refresh the device list the coordinator replays the
+        last known one, so without this check the entity would keep reporting a
+        phone as connected straight through an outage it cannot see past. A
+        phone's connectivity is then unknown, not unchanged. Reporting the
+        outage itself is the gateway sensor's job, and it still does it.
+        """
+        return (
+            super().available
+            and not self.coordinator.data.devices_stale
+            and self._device is not None
+        )
 
     @property
     def is_on(self) -> bool:

@@ -24,6 +24,9 @@ class GsmNodeData:
 
     healthy: bool = False
     devices: list[dict[str, Any]] = field(default_factory=list)
+    # True when `devices` was replayed from an earlier poll rather than fetched
+    # this time round, so nothing in it can be read as current.
+    devices_stale: bool = False
 
     def device(self, device_id: str) -> dict[str, Any] | None:
         """Return the phone with this client-facing device_id, if present."""
@@ -55,15 +58,21 @@ class GsmNodeCoordinator(DataUpdateCoordinator[GsmNodeData]):
     async def _async_update_data(self) -> GsmNodeData:
         """Probe /api/health, then list the phones behind it.
 
-        A failure never raises UpdateFailed: the connectivity sensor exists to
-        report an unreachable API Server, and marking it unavailable instead
-        would hide exactly the state it is there to show. The device list simply
-        keeps its last known contents until the gateway answers again.
+        A failure never raises UpdateFailed: the gateway's connectivity sensor
+        exists to report an unreachable API Server, and marking it unavailable
+        instead would hide exactly the state it is there to show. The device
+        list simply keeps its last known contents until the gateway answers
+        again — it is still what the notification targets and the SIM chooser
+        have to go on. What it is not is current, and it says so through
+        `devices_stale`, on both the paths that replay it: the per-phone sensors
+        go unavailable rather than repeat a status nobody has confirmed since.
         """
         previous = self.data or GsmNodeData()
 
         if not await self.client.health():
-            return GsmNodeData(healthy=False, devices=previous.devices)
+            return GsmNodeData(
+                healthy=False, devices=previous.devices, devices_stale=True
+            )
 
         try:
             devices = await self.client.async_devices()
@@ -73,6 +82,8 @@ class GsmNodeCoordinator(DataUpdateCoordinator[GsmNodeData]):
             raise ConfigEntryAuthFailed(str(err)) from err
         except GsmNodeError as err:
             _LOGGER.debug("gsmnode: device list unavailable: %s", err)
-            return GsmNodeData(healthy=True, devices=previous.devices)
+            return GsmNodeData(
+                healthy=True, devices=previous.devices, devices_stale=True
+            )
 
         return GsmNodeData(healthy=True, devices=devices)

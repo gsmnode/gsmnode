@@ -39,8 +39,9 @@ Assistant UI, and nothing goes in `configuration.yaml`.
 
 ## Install
 
-Needs Home Assistant **2025.3** or newer — notification targets are config
-subentries, which older versions cannot show.
+Needs Home Assistant **2025.4** or newer — notification targets are config
+subentries, and the flow that adds one uses a subentry helper (`_get_entry`)
+that older versions do not have.
 
 ### With HACS
 
@@ -200,7 +201,9 @@ actions:
 
 The same trigger shape works on a phone's own sensor (its entity id comes from
 the phone's name) — useful when the API Server is up but the phone that does the
-sending has stopped routing.
+sending has stopped routing. That is all it fires on: when the API Server
+cannot be reached for the phone list, a phone's sensor reads `unavailable`
+rather than `off`, because from here its connectivity is genuinely unknown.
 
 ## The sidebar item
 
@@ -341,8 +344,10 @@ the same fields as arguments.
 - `send_sms` → `POST /api/messages`; `call` → `POST /api/calls`.
 - Every 30s one coordinator polls `GET /api/health` and `GET /api/devices` and
   feeds both the gateway sensor and the per-phone ones. An unreachable server
-  turns the sensor **off** rather than making it *unavailable* — reporting that
-  is the sensor's whole job.
+  turns the gateway sensor **off** rather than making it *unavailable* —
+  reporting that is the sensor's whole job. The per-phone sensors go
+  **unavailable** instead, whenever a poll could not refresh the device list: a
+  phone's connectivity is then unknown, not unchanged.
 - All HTTP uses Home Assistant's shared aiohttp session (fully async), with a
   15s timeout per request.
 - The sidebar item is an iframe panel (`frontend.async_register_built_in_panel`)
@@ -431,9 +436,8 @@ have to be upscaled to reach the hDPI range.
 - No external dependencies (`requirements: []`).
 - SIM slots are **0-based** here and everywhere else in gsmnode: slot `0` is the
   first SIM. (A phone's sensor lists its slots and carriers in its attributes.)
-- Only plain SMS and calls are wired up. The API Server also accepts **MMS**
-  (`type: mms` with subject/attachments) and **data SMS** (`type: data`); those
-  have no service here yet.
+- SMS, **MMS** (subject and attachments) and calls are all wired up. The API
+  Server also accepts **data SMS** (`type: data`); that has no service here yet.
 - **End-to-end encryption is not supported.** Messages sent from here are
   plaintext and flagged as such, so a Phone Agent with a passphrase still sends
   them fine — but the API Server can read them, unlike ones composed in the Web

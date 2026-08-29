@@ -69,7 +69,7 @@ HACS reads **releases**, not tags — a tag on its own is invisible to it, and t
 3. Tag the pushed commit on GitHub and publish a release from it:
 
    ```sh
-   gh release create v3.3.1 --repo gsmnode/gsmnode-ha --generate-notes
+   gh release create v3.3.2 --repo gsmnode/gsmnode-ha --generate-notes
    ```
 
    Keep the tag and the manifest `version` in step; HACS shows the tag as the
