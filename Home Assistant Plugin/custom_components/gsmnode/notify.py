@@ -86,9 +86,11 @@ class GsmNodeNotifyEntity(NotifyEntity):
     @property
     def extra_state_attributes(self) -> dict[str, object]:
         """Show what this target does — the message itself cannot say."""
+        # A count, not the numbers: attributes land in the recorder, the
+        # logbook and every dashboard, and the numbers live in the subentry.
         return {
             "type": self._type,
-            "recipients": self._recipients,
+            "recipient_count": len(self._recipients),
             "device": self._config.get(CONF_DEVICE),
             "sim_number": self._config.get(CONF_SIM_NUMBER),
         }

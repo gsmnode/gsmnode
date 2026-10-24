@@ -141,8 +141,10 @@ Attachments are read off disk, so each path has to be under an
 static `services.yaml` that Home Assistant reads once for every install, so it
 cannot list SIMs that differ per gateway and per phone — only a config flow can
 do that, which is why notification targets get the real list. To see which slot
-is which, open a phone's connectivity sensor: its attributes carry the same
-`slot`, `carrier` and `number` the picker uses.
+is which, open a phone's connectivity sensor: its attributes carry each SIM's
+`slot` and `carrier`. The SIM's own number is left out of attributes on purpose,
+since those reach the recorder history and every dashboard; the notification
+target picker still shows it.
 
 ### Short forms
 

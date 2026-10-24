@@ -138,14 +138,14 @@ class GsmNodePhoneSensor(CoordinatorEntity[GsmNodeCoordinator], BinarySensorEnti
             "last_seen_at": device.get("last_seen_at"),
             "platform": device.get("platform"),
             "app_version": device.get("app_version"),
-            # SIM slots as the send services want them: 0-based, with whatever
-            # the phone knows about each one.
+            # SIM slots as the send services want them: 0-based, with the
+            # carrier to tell them apart. No number or display name (which is
+            # often the number): attributes land in the recorder and on every
+            # dashboard; the SIM chooser reads the coordinator instead.
             "sims": [
                 {
                     "slot": sim.get("slot"),
                     "carrier": sim.get("carrier"),
-                    "number": sim.get("number"),
-                    "display_name": sim.get("display_name"),
                 }
                 for sim in device.get("sims") or []
                 if isinstance(sim, dict)
