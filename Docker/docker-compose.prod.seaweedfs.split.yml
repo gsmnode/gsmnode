@@ -1,0 +1,339 @@
+name: gsmnode
+
+# Production gsmnode stack, with SeaweedFS split into its four roles — pulls
+# prebuilt images from a registry instead of building from source.
+# Self-contained: one file, no overlays. Everything an operator needs to set
+# lives in .env.
+#
+#   1. cp .env.prod.seaweedfs.split.example .env   (then edit it)
+#   2. docker compose -f docker-compose.prod.seaweedfs.split.yml pull
+#   3. docker compose -f docker-compose.prod.seaweedfs.split.yml up -d
+#
+# This is docker-compose.prod.seaweedfs.yml with the storage layer taken apart.
+# `weed server -s3` runs master, volume, filer and gateway as goroutines in one
+# process; here each is its own container, plus the SeaweedFS admin UI. What
+# that buys:
+#
+#   • the admin UI (weed admin) — a cluster view, and Object Store → Users,
+#     where S3 identities are created and revoked without touching a file;
+#   • per-role restart, upgrade and Prometheus metrics;
+#   • room to add a second volume server later, on this host or another.
+#
+# What it costs: five containers instead of one, five healthchecks to keep the
+# boot order honest, and one more port worth binding carefully. If none of the
+# above is wanted, use docker-compose.prod.seaweedfs.yml — the S3 behaviour is
+# identical.
+#
+# The on-disk layout is deliberately the same as the single-process file's:
+# master, volume and filer share one /data mount, exactly as `weed server -dir`
+# lays it out (master raft state, volume .dat/.idx, the filer's filerldb2/ — no
+# filename overlap). So the two files are interchangeable on the same volume,
+# with no migration either way. A *second* volume server would need its own.
+#
+# Only the admin UI publishes a host port. The S3 gateway, master, volume and
+# filer are reachable over the compose network, through the admin UI, or with
+# `docker compose exec` — the volume server in particular serves file content by
+# id with no authentication at all, so it has no business on a public interface.
+#
+# Before turning this on for a stack that already has MMS attachments:
+# PocketBase does NOT copy existing files into the bucket. See README.md.
+
+services:
+  # --- SeaweedFS: master -----------------------------------------------------
+  # Keeps the volume/topology metadata and hands out file ids. -ip is the name
+  # the other roles are told to reach it by, so it must be the service name and
+  # not the container IP the process would otherwise detect.
+  seaweedfs-master:
+    image: "${SEAWEED_IMAGE:-chrislusf/seaweedfs:4.45}"
+    container_name: gsmnode-seaweedfs-master
+    restart: unless-stopped
+    command: >
+      master -ip=seaweedfs-master -ip.bind=0.0.0.0 -mdir=/data
+      -volumeSizeLimitMB=1024 -metricsPort=9324
+    volumes:
+      # Named volume by default; set SEAWEED_DATA to a host path in .env for a
+      # bind mount, exactly as PB_DATA works. Back it up alongside PB_DATA —
+      # from here on the attachments live here, not in the database volume.
+      - "${SEAWEED_DATA:-seaweed_data}:/data"
+    # No published port: the master UI is one of the pages the admin UI serves.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  # --- SeaweedFS: volume server ---------------------------------------------
+  # Where the bytes actually land. -max=0 lets it size itself from free disk
+  # rather than the default cap of 8 volumes.
+  seaweedfs-volume:
+    image: "${SEAWEED_IMAGE:-chrislusf/seaweedfs:4.45}"
+    container_name: gsmnode-seaweedfs-volume
+    restart: unless-stopped
+    command: >
+      volume -master=seaweedfs-master:9333 -ip=seaweedfs-volume -ip.bind=0.0.0.0
+      -port=8080 -dir=/data -max=0 -metricsPort=9325
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+    volumes:
+      - "${SEAWEED_DATA:-seaweed_data}:/data"
+    # No published port, and this one is not an oversight: 8080 serves file
+    # content by file id with NO authentication — the S3 credentials do not
+    # apply to it. Publishing it would publish every attachment in the stack.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  # --- SeaweedFS: filer ------------------------------------------------------
+  # Gives the flat volume store a directory tree — buckets, object keys — and
+  # holds the S3 identities the admin UI writes. -defaultStoreDir is where its
+  # embedded leveldb goes; without it that would be the container's working
+  # directory, and the identities would not survive a recreate.
+  seaweedfs-filer:
+    image: "${SEAWEED_IMAGE:-chrislusf/seaweedfs:4.45}"
+    container_name: gsmnode-seaweedfs-filer
+    restart: unless-stopped
+    command: >
+      filer -master=seaweedfs-master:9333 -ip=seaweedfs-filer -ip.bind=0.0.0.0
+      -port=8888 -defaultStoreDir=/data -metricsPort=9326
+    depends_on:
+      seaweedfs-volume:
+        condition: service_healthy
+    volumes:
+      - "${SEAWEED_DATA:-seaweed_data}:/data"
+    # No published port. The filer's gRPC side (8888 + 10000) carries the IAM
+    # service that mints S3 credentials; keep both ends of it on the compose
+    # network.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8888/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  # --- SeaweedFS: bucket and identity seed ----------------------------------
+  # Runs once and exits, before the gateway starts. Two jobs:
+  #
+  #   1. create the bucket — PocketBase never issues a CreateBucket of its own;
+  #   2. write PocketBase's S3 identity into the filer's IAM store.
+  #
+  # (2) is why this stack does not set AWS_ACCESS_KEY_ID on the gateway, the way
+  # docker-compose.prod.seaweedfs.yml does. Those env vars are the *lowest*
+  # priority credential source in SeaweedFS: they are read only while the filer's
+  # store is empty, so the first identity added in the admin UI would silently
+  # displace them and lock PocketBase out. Seeding the store the admin UI itself
+  # writes leaves one source of truth, and the key PocketBase uses appears under
+  # Object Store → Users like any other.
+  #
+  # Both commands update in place, so every later boot re-applies the values from
+  # .env and changes nothing else — which is also how a rotated PB_S3_SECRET
+  # reaches the gateway.
+  #
+  # The closing grep is the gate: an empty IAM store means the gateway would come
+  # up in its allow-anyone default, so this fails loudly instead and the gateway
+  # below never starts. No `|| true` here, deliberately.
+  seaweedfs-init:
+    image: "${SEAWEED_IMAGE:-chrislusf/seaweedfs:4.45}"
+    container_name: gsmnode-seaweedfs-init
+    restart: "no"
+    depends_on:
+      seaweedfs-filer:
+        condition: service_healthy
+    environment:
+      # Passed as env and expanded by the shell inside the container, so the
+      # secret stays out of the container's argv.
+      PB_S3_BUCKET: "${PB_S3_BUCKET:-gsmnode}"
+      PB_S3_ACCESS_KEY: "${PB_S3_ACCESS_KEY:?set PB_S3_ACCESS_KEY in .env}"
+      PB_S3_SECRET: "${PB_S3_SECRET:?set PB_S3_SECRET in .env}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        printf '%s\n' \
+          "s3.bucket.create -name $$PB_S3_BUCKET" \
+          "s3.configure -user gsmnode -access_key $$PB_S3_ACCESS_KEY -secret_key $$PB_S3_SECRET -actions Admin -apply" \
+          | weed shell -master=seaweedfs-master:9333 -filer=seaweedfs-filer:8888
+        echo "s3.configure" \
+          | weed shell -master=seaweedfs-master:9333 -filer=seaweedfs-filer:8888 \
+          | grep -q "$$PB_S3_ACCESS_KEY"
+
+  # --- SeaweedFS: S3 gateway -------------------------------------------------
+  # The endpoint PocketBase talks to. No -config file: with only -filer given,
+  # credentials come from the filer's IAM store, which is what lets the admin UI
+  # add and revoke identities without a restart. A config file would take
+  # priority over that store and make the admin UI's users inert.
+  seaweedfs-s3:
+    image: "${SEAWEED_IMAGE:-chrislusf/seaweedfs:4.45}"
+    container_name: gsmnode-seaweedfs-s3
+    restart: unless-stopped
+    command: >
+      s3 -filer=seaweedfs-filer:8888 -ip.bind=0.0.0.0 -port=8333
+      -metricsPort=9327
+    depends_on:
+      seaweedfs-filer:
+        condition: service_healthy
+      # Never serve before an identity exists — see seaweedfs-init above.
+      seaweedfs-init:
+        condition: service_completed_successfully
+    # No published port: the stack reaches the gateway over the compose network.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8333/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  # --- SeaweedFS: admin UI ---------------------------------------------------
+  # Cluster topology, volumes, buckets, maintenance tasks, and Object Store →
+  # Users, where S3 access keys are minted and revoked. It finds the filer
+  # through the master, so -master is all it needs.
+  #
+  # Bound to loopback by default, like the PocketBase and API panels: on a remote
+  # host that means unreachable, so set SEAWEED_ADMIN_BIND=0.0.0.0 the same way
+  # PB_BIND and API_BIND get set — and put it behind the same reverse proxy.
+  #
+  # An unauthenticated panel that can mint credentials for the bucket *is* the
+  # bucket, so the password is required rather than defaulted — weed leaves auth
+  # off entirely when it is empty. It is read from WEED_ADMIN_* rather than a
+  # flag, which keeps it off the process command line. -dataDir persists the
+  # session key and the maintenance-task settings.
+  seaweedfs-admin:
+    image: "${SEAWEED_IMAGE:-chrislusf/seaweedfs:4.45}"
+    container_name: gsmnode-seaweedfs-admin
+    restart: unless-stopped
+    command: >
+      admin -port=23646 -master=seaweedfs-master:9333 -dataDir=/data
+      -metricsPort=9328
+    depends_on:
+      seaweedfs-master:
+        condition: service_healthy
+    environment:
+      WEED_ADMIN_USER: "${SEAWEED_ADMIN_USER:-admin}"
+      WEED_ADMIN_PASSWORD: "${SEAWEED_ADMIN_PASSWORD:?set SEAWEED_ADMIN_PASSWORD in .env}"
+      # Optional view-only login. weed ignores it unless the admin password
+      # above is set, which it is.
+      WEED_ADMIN_READONLY_USER: "${SEAWEED_ADMIN_READONLY_USER:-}"
+      WEED_ADMIN_READONLY_PASSWORD: "${SEAWEED_ADMIN_READONLY_PASSWORD:-}"
+    volumes:
+      # Its own small volume: session key and maintenance state, no object data.
+      - "${SEAWEED_ADMIN_DATA:-seaweed_admin}:/data"
+    ports:
+      - "${SEAWEED_ADMIN_BIND:-127.0.0.1}:${SEAWEED_ADMIN_PORT:-23646}:23646"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:23646/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  pocketbase:
+    image: "${PB_IMAGE:-ghcr.io/tajniak81/pocketbase-docker-root:latest}"
+    container_name: gsmnode-pocketbase
+    restart: unless-stopped
+    depends_on:
+      # PocketBase is the process that reads and writes the objects, so the
+      # gateway has to be serving before it is asked to store anything.
+      seaweedfs-s3:
+        condition: service_healthy
+    environment:
+      # The superuser is created/updated on boot (the API Server authenticates
+      # with it). This is the only place the first superuser can be created — the
+      # REST API cannot bootstrap it.
+      PB_ADMIN_EMAIL: "${PB_ADMIN_EMAIL:?set PB_ADMIN_EMAIL in .env}"
+      PB_ADMIN_PASSWORD: "${PB_ADMIN_PASSWORD:?set PB_ADMIN_PASSWORD in .env}"
+    volumes:
+      # Named volume by default; set PB_DATA to a host path in .env for a bind mount.
+      - "${PB_DATA:-pb_data}:/pb/pb_data"
+    ports:
+      # Bound to localhost by default — the admin UI (/_/) is reachable only on
+      # the host. Set PB_BIND=0.0.0.0 in .env to expose it on the network.
+      - "${PB_BIND:-127.0.0.1}:${PB_PORT:-8070}:8070"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8070/api/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  api-server:
+    image: "${API_IMAGE:-ghcr.io/tajniak81/gsmnode-api-server:latest}"
+    container_name: gsmnode-api
+    restart: unless-stopped
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+      # The bucket must exist before the bootstrap points PocketBase at it.
+      seaweedfs-init:
+        condition: service_completed_successfully
+    environment:
+      API_ADDR: ":8080"
+      # Reach PocketBase by its service name on the internal network.
+      POCKETBASE_URL: "http://pocketbase:8070"
+      PB_ADMIN_EMAIL: "${PB_ADMIN_EMAIL}"
+      PB_ADMIN_PASSWORD: "${PB_ADMIN_PASSWORD}"
+      MESSAGE_TTL: "${MESSAGE_TTL:-5m}"
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://localhost:8090}"
+      # The panel's overview probes WEBAPP_URL/healthz for the Web App's health.
+      # It must be the address on the internal network: the default is
+      # localhost:8090, which from inside this container is this container.
+      WEBAPP_URL: "http://web-app:8090"
+      # Schema + super-admin bootstrap on boot (idempotent). Set PB_BOOTSTRAP=false
+      # to skip it once the database is established. The super-admin is the first
+      # app login (role "superadmin"), created only when both email and password
+      # are set — distinct from the PocketBase superuser above.
+      PB_BOOTSTRAP: "${PB_BOOTSTRAP:-true}"
+      GSMNODE_SUPERADMIN_EMAIL: "${GSMNODE_SUPERADMIN_EMAIL:-}"
+      GSMNODE_SUPERADMIN_PASSWORD: "${GSMNODE_SUPERADMIN_PASSWORD:-}"
+      GSMNODE_SUPERADMIN_NAME: "${GSMNODE_SUPERADMIN_NAME:-Administrator}"
+      # --- File storage --------------------------------------------------
+      # Read by the API Server's bootstrap, which writes them into PocketBase's
+      # settings on every boot, idempotently. Only record files move — MMS
+      # attachments. The database and PocketBase's own backups stay on PB_DATA.
+      PB_S3_ENABLED: "true"
+      PB_S3_BUCKET: "${PB_S3_BUCKET:-gsmnode}"
+      # The gateway's service name: a server-to-server call inside the compose
+      # network.
+      PB_S3_ENDPOINT: "http://seaweedfs-s3:8333"
+      # SeaweedFS ignores the region; PocketBase insists on having one.
+      PB_S3_REGION: "${PB_S3_REGION:-us-east-1}"
+      PB_S3_ACCESS_KEY: "${PB_S3_ACCESS_KEY}"
+      PB_S3_SECRET: "${PB_S3_SECRET}"
+      # Path style, because a self-hosted gateway has no per-bucket DNS.
+      PB_S3_FORCE_PATH_STYLE: "true"
+    volumes:
+      # Plugin config (plugins.json) and settings persisted from the panel. It
+      # holds plugin credentials, so treat it like the database. Named volume by
+      # default; set API_DATA to a host path in .env for a bind mount.
+      - "${API_DATA:-api_data}:/data"
+    ports:
+      # Localhost-only by default (the Web App reaches it over the internal
+      # network). Set API_BIND=0.0.0.0 to expose the API panel on the network.
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8080}:8080"
+
+  web-app:
+    image: "${WEB_IMAGE:-ghcr.io/tajniak81/gsmnode-web-app:latest}"
+    container_name: gsmnode-web
+    restart: unless-stopped
+    depends_on:
+      - api-server
+    environment:
+      # The BFF reverse-proxies /api/* to the API Server over the internal network.
+      API_BASE: "http://api-server:8080"
+    ports:
+      # The public front door. Bound on all interfaces so browsers can reach it.
+      - "${WEB_PORT:-8090}:8090"
+
+volumes:
+  pb_data:
+  api_data:
+  # Shared by master, volume and filer — the same layout `weed server -dir`
+  # writes, so this file and docker-compose.prod.seaweedfs.yml can swap places
+  # on it.
+  seaweed_data:
+  # The admin UI's own session key and maintenance-task state. Small, and no
+  # part of the object store.
+  seaweed_admin:

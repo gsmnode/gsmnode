@@ -1,0 +1,90 @@
+name: gsmnode-aio
+
+# Single all-in-one container, with external S3: PocketBase + API Server + Web
+# App (nginx), built from source, with record files in an S3 bucket that
+# already exists somewhere else. Self-contained — one file, nothing to layer.
+#
+#   cp .env.s3.example .env   (then edit it — PB_S3_* especially)
+#   docker compose -f docker-compose.s3.yml up -d --build
+#
+# PocketBase keeps its record files — MMS attachments, sent and received — in
+# that bucket instead of on the pb_data volume next to the database. The
+# database, PocketBase's own backups and the API Server's /data stay where they
+# are. Clients cannot tell the difference: attachments travel through the API
+# Server as base64, never as a storage URL.
+#
+# The bucket must already exist, and nothing here runs the gateway. For a
+# SeaweedFS that comes up with the container, use docker-compose.seaweedfs.yml.
+#
+# Before turning this on for a stack that already has MMS attachments:
+# PocketBase does NOT copy existing files into the bucket. See
+# ../Docker/README.md.
+
+services:
+  gsmnode:
+    build:
+      # Project root (one level up from this compose file).
+      context: ..
+      dockerfile: Docker-AIO/Dockerfile
+      args:
+        # Empty -> bundle uses same-origin "/api", proxied internally by nginx.
+        VITE_API_BASE: "${VITE_API_BASE:-}"
+        # Optional: pin PocketBase; empty fetches the latest release at build.
+        PB_VERSION: "${PB_VERSION:-}"
+    image: gsmnode-aio
+    container_name: gsmnode-aio
+    restart: unless-stopped
+    extra_hosts:
+      # Lets PB_S3_ENDPOINT name the Docker host as host.docker.internal.
+      # Harmless when the endpoint is somewhere else entirely.
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Superuser (also used by the API Server to authenticate to PocketBase).
+      PB_ADMIN_EMAIL: "${PB_ADMIN_EMAIL:?set PB_ADMIN_EMAIL in .env}"
+      PB_ADMIN_PASSWORD: "${PB_ADMIN_PASSWORD:?set PB_ADMIN_PASSWORD in .env}"
+      MESSAGE_TTL: "${MESSAGE_TTL:-5m}"
+      # Match CORS to the web origin (only used if a browser calls the API directly).
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://localhost:8090}"
+      # Schema + super-admin bootstrap on boot (idempotent). Set PB_BOOTSTRAP=false
+      # to skip it once the database is established. The super-admin is the first
+      # app login (role "superadmin"), created only when both email and password
+      # are set — distinct from the PocketBase superuser above.
+      PB_BOOTSTRAP: "${PB_BOOTSTRAP:-true}"
+      GSMNODE_SUPERADMIN_EMAIL: "${GSMNODE_SUPERADMIN_EMAIL:-}"
+      GSMNODE_SUPERADMIN_PASSWORD: "${GSMNODE_SUPERADMIN_PASSWORD:-}"
+      GSMNODE_SUPERADMIN_NAME: "${GSMNODE_SUPERADMIN_NAME:-Administrator}"
+      # --- File storage --------------------------------------------------
+      # supervisord passes these through to the API Server, whose bootstrap
+      # writes them into PocketBase's settings on every boot, idempotently.
+      # Only record files move — MMS attachments. The database and
+      # PocketBase's own backups stay on pb_data.
+      # The bucket must already exist: nothing here creates it.
+      PB_S3_ENABLED: "true"
+      PB_S3_BUCKET: "${PB_S3_BUCKET:-gsmnode}"
+      PB_S3_ENDPOINT: "${PB_S3_ENDPOINT:?set PB_S3_ENDPOINT in .env}"
+      PB_S3_REGION: "${PB_S3_REGION:-us-east-1}"
+      PB_S3_ACCESS_KEY: "${PB_S3_ACCESS_KEY:?set PB_S3_ACCESS_KEY in .env}"
+      PB_S3_SECRET: "${PB_S3_SECRET:?set PB_S3_SECRET in .env}"
+      # true for SeaweedFS and MinIO, false for AWS S3 proper.
+      PB_S3_FORCE_PATH_STYLE: "${PB_S3_FORCE_PATH_STYLE:-true}"
+    ports:
+      - "${WEB_PORT:-8090}:80"    # Web App
+      - "${PB_PORT:-8070}:8070"   # PocketBase admin UI / API
+      - "${API_PORT:-8080}:8080"  # API Server + embedded API web panel (root /)
+    volumes:
+      - pb_data:/pb/pb_data
+      # Plugin config (plugins.json) and settings persisted from the panel —
+      # without this they are recreated empty with the container.
+      - api_data:/data
+    healthcheck:
+      # Every process must answer — the three app processes. Declared here as well as in
+      # the image so the check is visible.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8070/api/health >/dev/null && wget -qO- http://127.0.0.1:8080/api/health >/dev/null && wget -qO- http://127.0.0.1:80/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  pb_data:
+  api_data:

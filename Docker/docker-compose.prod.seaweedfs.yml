@@ -1,0 +1,167 @@
+name: gsmnode
+
+# Production gsmnode stack, with SeaweedFS — pulls prebuilt images from a
+# registry instead of building from source. Self-contained: one file, no
+# overlays. Everything an operator needs to set lives in .env.
+#
+#   1. cp .env.prod.seaweedfs.example .env   (then edit it)
+#   2. docker compose -f docker-compose.prod.seaweedfs.yml pull
+#   3. docker compose -f docker-compose.prod.seaweedfs.yml up -d
+#
+# This is docker-compose.prod.yml plus an S3 object store: PocketBase keeps its
+# record files — MMS attachments, sent and received — in a SeaweedFS bucket instead of
+# on the pb_data volume next to the database. The database, PocketBase's own
+# backups and the API Server's api_data stay where they are. Clients cannot
+# tell the difference: attachments travel through the API Server as base64,
+# never as a storage URL.
+#
+# Before turning this on for a stack that already has MMS attachments:
+# PocketBase does NOT copy existing files into the bucket. See README.md.
+
+services:
+  seaweedfs:
+    image: "${SEAWEED_IMAGE:-chrislusf/seaweedfs:4.45}"
+    container_name: gsmnode-seaweedfs
+    restart: unless-stopped
+    # One process, four roles: master, volume, filer and the S3 gateway. -dir is
+    # the only state it keeps.
+    command: server -dir=/data -s3 -master.volumeSizeLimitMB=1024
+    environment:
+      # SeaweedFS falls back to these when started without an -s3.config file,
+      # and configuring one identity is what takes the S3 gateway out of its
+      # default allow-anyone mode. The same credentials PocketBase authenticates
+      # with below — one pair to set, in .env.
+      AWS_ACCESS_KEY_ID: "${PB_S3_ACCESS_KEY:?set PB_S3_ACCESS_KEY in .env}"
+      AWS_SECRET_ACCESS_KEY: "${PB_S3_SECRET:?set PB_S3_SECRET in .env}"
+    volumes:
+      # Named volume by default; set SEAWEED_DATA to a host path in .env for a
+      # bind mount, exactly as PB_DATA works. Back it up alongside PB_DATA —
+      # from here on the attachments live here, not in the database volume.
+      - "${SEAWEED_DATA:-seaweed_data}:/data"
+    # No published port: the stack reaches the gateway over the compose network.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  seaweedfs-init:
+    image: "${SEAWEED_IMAGE:-chrislusf/seaweedfs:4.45}"
+    container_name: gsmnode-seaweedfs-init
+    # Runs once and exits. PocketBase never issues a CreateBucket of its own and
+    # SeaweedFS will not conjure one on first upload, so something has to.
+    # Creating a bucket that already exists is a no-op, so every later boot
+    # passes straight through.
+    restart: "no"
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    # `|| true` so a restart is never blocked by the shell's exit status: this
+    # step is best-effort, and a gateway that is genuinely unreachable is
+    # reported by the API Server's own S3 check at boot, with the reason.
+    command:
+      - 'echo "s3.bucket.create -name ${PB_S3_BUCKET:-gsmnode}" | weed shell -master=seaweedfs:9333 || true'
+
+  pocketbase:
+    image: "${PB_IMAGE:-ghcr.io/tajniak81/pocketbase-docker-root:latest}"
+    container_name: gsmnode-pocketbase
+    restart: unless-stopped
+    depends_on:
+      # PocketBase is the process that reads and writes the objects, so the
+      # gateway has to be serving before it is asked to store anything.
+      seaweedfs:
+        condition: service_healthy
+    environment:
+      # The superuser is created/updated on boot (the API Server authenticates
+      # with it). This is the only place the first superuser can be created — the
+      # REST API cannot bootstrap it.
+      PB_ADMIN_EMAIL: "${PB_ADMIN_EMAIL:?set PB_ADMIN_EMAIL in .env}"
+      PB_ADMIN_PASSWORD: "${PB_ADMIN_PASSWORD:?set PB_ADMIN_PASSWORD in .env}"
+    volumes:
+      # Named volume by default; set PB_DATA to a host path in .env for a bind mount.
+      - "${PB_DATA:-pb_data}:/pb/pb_data"
+    ports:
+      # Bound to localhost by default — the admin UI (/_/) is reachable only on
+      # the host. Set PB_BIND=0.0.0.0 in .env to expose it on the network.
+      - "${PB_BIND:-127.0.0.1}:${PB_PORT:-8070}:8070"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8070/api/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  api-server:
+    image: "${API_IMAGE:-ghcr.io/tajniak81/gsmnode-api-server:latest}"
+    container_name: gsmnode-api
+    restart: unless-stopped
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+      # The bucket must exist before the bootstrap points PocketBase at it.
+      seaweedfs-init:
+        condition: service_completed_successfully
+    environment:
+      API_ADDR: ":8080"
+      # Reach PocketBase by its service name on the internal network.
+      POCKETBASE_URL: "http://pocketbase:8070"
+      PB_ADMIN_EMAIL: "${PB_ADMIN_EMAIL}"
+      PB_ADMIN_PASSWORD: "${PB_ADMIN_PASSWORD}"
+      MESSAGE_TTL: "${MESSAGE_TTL:-5m}"
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://localhost:8090}"
+      # The panel's overview probes WEBAPP_URL/healthz for the Web App's health.
+      # It must be the address on the internal network: the default is
+      # localhost:8090, which from inside this container is this container.
+      WEBAPP_URL: "http://web-app:8090"
+      # Schema + super-admin bootstrap on boot (idempotent). Set PB_BOOTSTRAP=false
+      # to skip it once the database is established. The super-admin is the first
+      # app login (role "superadmin"), created only when both email and password
+      # are set — distinct from the PocketBase superuser above.
+      PB_BOOTSTRAP: "${PB_BOOTSTRAP:-true}"
+      GSMNODE_SUPERADMIN_EMAIL: "${GSMNODE_SUPERADMIN_EMAIL:-}"
+      GSMNODE_SUPERADMIN_PASSWORD: "${GSMNODE_SUPERADMIN_PASSWORD:-}"
+      GSMNODE_SUPERADMIN_NAME: "${GSMNODE_SUPERADMIN_NAME:-Administrator}"
+      # --- File storage --------------------------------------------------
+      # Read by the API Server's bootstrap, which writes them into PocketBase's
+      # settings on every boot, idempotently. Only record files move — MMS
+      # attachments. The database and PocketBase's own backups stay on PB_DATA.
+      PB_S3_ENABLED: "true"
+      PB_S3_BUCKET: "${PB_S3_BUCKET:-gsmnode}"
+      # The gateway's service name: a server-to-server call inside the compose
+      # network.
+      PB_S3_ENDPOINT: "http://seaweedfs:8333"
+      # SeaweedFS ignores the region; PocketBase insists on having one.
+      PB_S3_REGION: "${PB_S3_REGION:-us-east-1}"
+      PB_S3_ACCESS_KEY: "${PB_S3_ACCESS_KEY}"
+      PB_S3_SECRET: "${PB_S3_SECRET}"
+      # Path style, because a self-hosted gateway has no per-bucket DNS.
+      PB_S3_FORCE_PATH_STYLE: "true"
+    volumes:
+      # Plugin config (plugins.json) and settings persisted from the panel. It
+      # holds plugin credentials, so treat it like the database. Named volume by
+      # default; set API_DATA to a host path in .env for a bind mount.
+      - "${API_DATA:-api_data}:/data"
+    ports:
+      # Localhost-only by default (the Web App reaches it over the internal
+      # network). Set API_BIND=0.0.0.0 to expose the API panel on the network.
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8080}:8080"
+
+  web-app:
+    image: "${WEB_IMAGE:-ghcr.io/tajniak81/gsmnode-web-app:latest}"
+    container_name: gsmnode-web
+    restart: unless-stopped
+    depends_on:
+      - api-server
+    environment:
+      # The BFF reverse-proxies /api/* to the API Server over the internal network.
+      API_BASE: "http://api-server:8080"
+    ports:
+      # The public front door. Bound on all interfaces so browsers can reach it.
+      - "${WEB_PORT:-8090}:8090"
+
+volumes:
+  pb_data:
+  api_data:
+  seaweed_data:

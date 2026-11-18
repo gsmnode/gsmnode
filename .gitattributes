@@ -4,6 +4,7 @@
 
 # Docker entrypoints / configs consumed by Linux tooling.
 Dockerfile text eol=lf
+Dockerfile.* text eol=lf
 .dockerignore text eol=lf
 
 # Unraid plugins. The .plg carries shell blocks bash runs on the server, so a CR

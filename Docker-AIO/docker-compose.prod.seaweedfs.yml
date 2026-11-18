@@ -1,0 +1,124 @@
+name: gsmnode-aio
+
+# Production all-in-one with SeaweedFS — built into ONE image here:
+# Dockerfile.seaweedfs bakes `weed server -s3` (master, volume, filer and S3
+# gateway in one process) into the same container as PocketBase, the API
+# Server and the Web App. One service, one container, three volumes.
+# Self-contained: one file, no overlays. Everything an operator needs to set
+# lives in .env.
+#
+#   1. cp .env.prod.seaweedfs.example .env   (then edit it)
+#   2. docker compose -f docker-compose.prod.seaweedfs.yml build
+#   3. docker compose -f docker-compose.prod.seaweedfs.yml up -d
+#
+# The build context is the repo root, so this has to run on a host that has the
+# checkout. To deploy elsewhere, set AIO_IMAGE to a registry tag, `push` the
+# built image there and `pull` it on the deploy host — `image:` and `build:`
+# are both set, so the same file does either.
+#
+# This is docker-compose.prod.yml plus an S3 object store: PocketBase keeps its record files — MMS attachments, sent and received — in
+# a SeaweedFS bucket instead of on the pb_data volume next to the database. The
+# database, PocketBase's own backups and the API Server's /data stay where they
+# are. Clients cannot tell the difference: attachments travel through the API
+# Server as base64, never as a storage URL.
+#
+# What baking it in costs against the two-container shape of
+# docker-compose.seaweedfs.yml: a new SeaweedFS is a rebuild (SEAWEED_VERSION),
+# not a tag change. For per-role restart, metrics and the SeaweedFS admin UI,
+# see docker-compose.prod.seaweedfs.split.yml — the S3 behaviour is identical,
+# and the data volume is interchangeable (both write the `weed server -dir`
+# layout).
+#
+# Before turning this on for a stack that already has MMS attachments:
+# PocketBase does NOT copy existing files into the bucket. See
+# ../Docker/README.md.
+#
+# On first boot PocketBase's program creates the bucket and upserts the
+# superuser from PB_ADMIN_*, and the API Server reconciles the schema, creates
+# the app super-admin from GSMNODE_SUPERADMIN_*, and points PocketBase's file
+# storage at the bucket. Every step is idempotent.
+
+services:
+  gsmnode:
+    build:
+      # Project root (one level up from this compose file), so the Dockerfile
+      # can reach both "API Server/" and "Web App/".
+      context: ..
+      dockerfile: Docker-AIO/Dockerfile.seaweedfs
+      args:
+        # Empty -> bundle uses same-origin "/api", proxied internally by nginx.
+        - VITE_API_BASE=${VITE_API_BASE:-}
+        # Bare names = pass through only when set in the environment, so an
+        # unset SEAWEED_VERSION leaves the Dockerfile pin in place instead of
+        # overriding it with an empty string (which would not build at all).
+        - PB_VERSION
+        - SEAWEED_VERSION
+    # A local tag by default, so build + up works with no registry. Set
+    # AIO_IMAGE to a registry tag to `push` it there and `pull` it elsewhere.
+    image: "${AIO_IMAGE:-gsmnode-aio-seaweedfs}"
+    container_name: gsmnode-aio
+    restart: unless-stopped
+    environment:
+      # Superuser (also used by the API Server to authenticate to PocketBase).
+      PB_ADMIN_EMAIL: "${PB_ADMIN_EMAIL:?set PB_ADMIN_EMAIL in .env}"
+      PB_ADMIN_PASSWORD: "${PB_ADMIN_PASSWORD:?set PB_ADMIN_PASSWORD in .env}"
+      MESSAGE_TTL: "${MESSAGE_TTL:-5m}"
+      # Match CORS to the web origin (only used if a browser calls the API directly).
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-http://localhost:8090}"
+      # Schema + super-admin bootstrap on boot (idempotent). Set PB_BOOTSTRAP=false
+      # to skip it once the database is established. The super-admin is the first
+      # app login (role "superadmin"), created only when both email and password
+      # are set — distinct from the PocketBase superuser above.
+      PB_BOOTSTRAP: "${PB_BOOTSTRAP:-true}"
+      GSMNODE_SUPERADMIN_EMAIL: "${GSMNODE_SUPERADMIN_EMAIL:-}"
+      GSMNODE_SUPERADMIN_PASSWORD: "${GSMNODE_SUPERADMIN_PASSWORD:-}"
+      GSMNODE_SUPERADMIN_NAME: "${GSMNODE_SUPERADMIN_NAME:-Administrator}"
+      # --- File storage --------------------------------------------------
+      # supervisord passes these through to the API Server, whose bootstrap
+      # writes them into PocketBase's settings on every boot, idempotently.
+      # Only record files move — MMS attachments. The database and
+      # PocketBase's own backups stay on PB_DATA.
+      # The image fixes the rest (PB_S3_ENABLED, the loopback endpoint, path
+      # style, the region): the gateway is inside, at an address that cannot
+      # change.
+      #
+      # The credentials do double duty: they configure the gateway's single
+      # identity — which is what takes it out of its default allow-anyone mode
+      # — *and* they are what PocketBase authenticates with. No safe defaults;
+      # the gateway refuses to start without them, and with it the whole
+      # container.
+      PB_S3_BUCKET: "${PB_S3_BUCKET:-gsmnode}"
+      PB_S3_ACCESS_KEY: "${PB_S3_ACCESS_KEY:?set PB_S3_ACCESS_KEY in .env}"
+      PB_S3_SECRET: "${PB_S3_SECRET:?set PB_S3_SECRET in .env}"
+    ports:
+      - "${WEB_PORT:-8090}:80"    # Web App
+      - "${PB_PORT:-8070}:8070"   # PocketBase admin UI / API
+      - "${API_PORT:-8080}:8080"  # API Server + embedded API web panel (root /)
+      # Nothing of SeaweedFS is published: PocketBase reaches the S3 gateway
+      # inside the container, and the volume server (8081 inside) serves file
+      # content by id with no authentication at all.
+    volumes:
+      # Named volume by default; set PB_DATA to a host path in .env for a bind mount.
+      - "${PB_DATA:-pb_data}:/pb/pb_data"
+      # Plugin config (plugins.json) and settings persisted from the panel. It
+      # holds plugin credentials, so treat it like the database. Set API_DATA to
+      # a host path in .env for a bind mount.
+      - "${API_DATA:-api_data}:/data"
+      # From here on the attachments live here, not in PB_DATA — back the two
+      # up together. Named volume by default; set SEAWEED_DATA to a host path.
+      - "${SEAWEED_DATA:-seaweed_data}:/seaweed/data"
+    healthcheck:
+      # Every process must answer — SeaweedFS's master and gateway and the three app processes. Declared here as well as in
+      # the image so the check is visible.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9333/cluster/status >/dev/null && wget -qO- http://127.0.0.1:8333/healthz >/dev/null && wget -qO- http://127.0.0.1:8070/api/health >/dev/null && wget -qO- http://127.0.0.1:8080/api/health >/dev/null && wget -qO- http://127.0.0.1:80/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  pb_data:
+  api_data:
+  # The `weed server -dir` layout, so this file and its .split. twin can swap
+  # places on it.
+  seaweed_data:

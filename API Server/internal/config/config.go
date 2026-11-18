@@ -32,12 +32,41 @@ type Config struct {
 	SuperAdminEmail    string
 	SuperAdminPassword string
 	SuperAdminName     string
+
+	// PocketBase file storage. With S3Enabled set, bootstrap points PocketBase's
+	// "Files storage" at this bucket instead of the pb_data volume; left unset,
+	// uploads stay on disk exactly as they always have. Only *record files* move
+	// — MMS attachments — while the database and PocketBase's own backups stay
+	// on pb_data. Nothing here reaches a container unless one of the S3 or
+	// SeaweedFS compose files is used, so an existing stack is unaffected by an
+	// upgrade. S3Endpoint has no default: an in-stack SeaweedFS and one outside
+	// it are different addresses, and guessing either would be worse than not
+	// starting.
+	S3Enabled   bool
+	S3Bucket    string
+	S3Region    string
+	S3Endpoint  string
+	S3AccessKey string
+	S3Secret    string
+	// S3ForcePathStyle keeps bucket names in the path rather than the hostname.
+	// True by default because that is what a self-hosted gateway serves —
+	// virtual-host style would need a DNS entry per bucket.
+	S3ForcePathStyle bool
 }
 
 // AdminConfigured reports whether the PocketBase service-account credentials are
 // set. Bootstrap and every privileged flow authenticate with them.
 func (c Config) AdminConfigured() bool {
 	return c.PBAdminEmail != "" && c.PBAdminPass != ""
+}
+
+// StorageConfigured reports whether S3 file storage has been fully specified.
+// Anything less than all of it counts as "not asked for": a half-filled .env
+// leaves uploads on the local volume rather than pointing PocketBase at a
+// bucket it has no way to reach.
+func (c Config) StorageConfigured() bool {
+	return c.S3Enabled && c.S3Bucket != "" && c.S3Endpoint != "" &&
+		c.S3AccessKey != "" && c.S3Secret != ""
 }
 
 // Load reads configuration from environment variables, applying sensible
@@ -61,6 +90,15 @@ func Load() Config {
 		SuperAdminEmail:    firstEnv("GSMNODE_SUPERADMIN_EMAIL", "SUPERADMIN_EMAIL"),
 		SuperAdminPassword: firstEnv("GSMNODE_SUPERADMIN_PASSWORD", "SUPERADMIN_PASSWORD"),
 		SuperAdminName:     getenv("GSMNODE_SUPERADMIN_NAME", "Administrator"),
+
+		// Record-file storage in an S3 bucket (see StorageConfigured).
+		S3Enabled:        boolEnv("PB_S3_ENABLED", false),
+		S3Bucket:         getenv("PB_S3_BUCKET", "gsmnode"),
+		S3Region:         getenv("PB_S3_REGION", "us-east-1"),
+		S3Endpoint:       strings.TrimRight(getenv("PB_S3_ENDPOINT", ""), "/"),
+		S3AccessKey:      getenv("PB_S3_ACCESS_KEY", ""),
+		S3Secret:         getenv("PB_S3_SECRET", ""),
+		S3ForcePathStyle: boolEnv("PB_S3_FORCE_PATH_STYLE", true),
 	}
 
 	if cfg.PBAdminEmail == "" || cfg.PBAdminPass == "" {

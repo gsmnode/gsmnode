@@ -51,6 +51,16 @@ Copy-Item .env.example .env
 | `PLUGINS_FILE` | Local JSON store for plugin enable-state + config | `plugins.json` |
 | `PB_BOOTSTRAP` | Reconcile the schema + super-admin on boot | `true` |
 | `GSMNODE_SUPERADMIN_EMAIL` / `_PASSWORD` / `_NAME` | First app login (role `superadmin`), created on boot when both email and password are set — distinct from the PocketBase superuser | — |
+| `PB_S3_ENABLED` | Point PocketBase's record-file storage (MMS attachments) at an S3 bucket on boot; needs all of the `PB_S3_*` below | `false` |
+| `PB_S3_ENDPOINT` / `PB_S3_BUCKET` / `PB_S3_REGION` | The bucket | — / `gsmnode` / `us-east-1` |
+| `PB_S3_ACCESS_KEY` / `PB_S3_SECRET` | Its credentials | — |
+| `PB_S3_FORCE_PATH_STYLE` | Bucket in the path, not the hostname — `true` for SeaweedFS and MinIO | `true` |
+
+MMS attachments arrive and leave as base64 on the wire, but are stored as
+PocketBase files in the record's `files` field, with only their metadata in
+`attachments`. The `PB_S3_*` settings decide where those files live; the
+compose files in [`../Docker`](../Docker/README.md#file-storage-seaweedfs--s3)
+set them for you.
 
 `WEBAPP_URL` and `CORS_ALLOW_ORIGINS` are also editable from the panel's
 **Settings**, which merges the change back into `.env` so it survives a restart.

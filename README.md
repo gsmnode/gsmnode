@@ -270,6 +270,14 @@ is the database, and `api_data` is the API Server's plugin state — `plugins.js
 plus the settings the panel persists. Plugin config holds credentials such as
 IMAP/SMTP logins, so treat it as sensitively as the database.
 
+`Docker/` also ships the same stack with MMS attachments kept in an S3 bucket
+instead of `pb_data` — SeaweedFS inside the stack (single-process or split into
+its roles, with an admin UI), or an S3 endpoint you already run. Each is one
+compose file with a matching `.env` example; see
+[`Docker/README.md`](Docker/README.md#file-storage-seaweedfs--s3).
+`Docker-AIO/` has the same shapes, including images with SeaweedFS baked into the
+one container; see [`Docker-AIO/README.md`](Docker-AIO/README.md#file-storage-seaweedfs--s3).
+
 The phone surfaces are not containerized — they are Android apps, installed on
 the phone (see their READMEs).
 

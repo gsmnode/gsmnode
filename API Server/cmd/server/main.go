@@ -33,12 +33,31 @@ func main() {
 	// bad service account, must not stop the server from coming up so an operator
 	// can fix the connection.
 	if cfg.Bootstrap && cfg.AdminConfigured() {
+		// Record files go to S3 only when the whole bucket is described. Asking
+		// for it and leaving half of it blank is a misconfiguration worth saying
+		// out loud, not a reason to point PocketBase at nowhere.
+		var s3 *bootstrap.S3Options
+		if cfg.StorageConfigured() {
+			s3 = &bootstrap.S3Options{
+				Enabled:        true,
+				Bucket:         cfg.S3Bucket,
+				Region:         cfg.S3Region,
+				Endpoint:       cfg.S3Endpoint,
+				AccessKey:      cfg.S3AccessKey,
+				Secret:         cfg.S3Secret,
+				ForcePathStyle: cfg.S3ForcePathStyle,
+			}
+		} else if cfg.S3Enabled {
+			log.Println("WARNING: PB_S3_ENABLED is set but the bucket, endpoint or credentials are incomplete — file storage stays on the local volume")
+		}
+
 		bootCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		if err := bootstrap.Run(bootCtx, client, bootstrap.Options{
 			UsersCollection:    "users",
 			SuperAdminEmail:    cfg.SuperAdminEmail,
 			SuperAdminPassword: cfg.SuperAdminPassword,
 			SuperAdminName:     cfg.SuperAdminName,
+			S3:                 s3,
 		}); err != nil {
 			log.Printf("WARNING: bootstrap failed: %v", err)
 		} else {

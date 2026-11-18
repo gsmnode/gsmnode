@@ -63,6 +63,11 @@ const f = {
   date: (name, opts = {}) => ({ name, type: "date", required: false, ...opts }),
   json: (name, opts = {}) => ({ name, type: "json", required: false, maxSize: 2000000, ...opts }),
   url: (name, opts = {}) => ({ name, type: "url", required: false, ...opts }),
+  // Multi-file field, any MIME type. Limits match MaxAttachments /
+  // MaxAttachmentSize in internal/bootstrap/schema.go.
+  files: (name, opts = {}) => ({
+    name, type: "file", required: false, maxSelect: 20, maxSize: 5 * 1024 * 1024, mimeTypes: [], ...opts,
+  }),
   select: (name, values, opts = {}) => ({
     name, type: "select", required: false, maxSelect: 1, values, ...opts,
   }),
@@ -116,7 +121,8 @@ function definitions(ids) {
         f.text("data_payload"), // base64 binary payload for data SMS
         f.number("data_port"),
         f.text("subject"), // MMS subject
-        f.json("attachments"), // MMS [{filename, content_type, data(base64)}]
+        f.json("attachments"), // MMS [{filename, content_type, part}] — part indexes files
+        f.files("files"), // MMS attachment bytes, in PocketBase file storage (pb_data or S3)
         f.bool("encrypted"), // phone_numbers + text_message are E2E ciphertext
         f.date("schedule_at"),
         f.date("sent_at"),
@@ -144,7 +150,8 @@ function definitions(ids) {
         f.text("data_payload"), // base64 binary payload for data SMS
         f.number("data_port"),
         f.text("subject"), // MMS subject
-        f.json("attachments"), // MMS [{filename, content_type, data(base64)}]
+        f.json("attachments"), // MMS [{filename, content_type, part}] — part indexes files
+        f.files("files"), // MMS attachment bytes, in PocketBase file storage (pb_data or S3)
         f.bool("encrypted"), // phone_number + message are E2E ciphertext
         f.relation("device", ids.devices, { cascadeDelete: false }),
         f.relation("owner", ids.users, { required: true, cascadeDelete: true }),

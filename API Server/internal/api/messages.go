@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -190,22 +191,26 @@ func (s *Server) handleEnqueueMessage(w http.ResponseWriter, r *http.Request) {
 			fields["data_port"] = *req.DataPort
 		}
 	}
+	var atts []attachment
 	if msgType == msgTypeMMS {
 		fields["subject"] = req.Subject
-		if len(req.Attachments) > 0 {
-			fields["attachments"] = req.Attachments
-		}
+		atts = req.Attachments
 	}
 	if req.ScheduleAt != "" {
 		fields["schedule_at"] = req.ScheduleAt
 	}
 
-	rec, err := s.pb.Create(r.Context(), colMessages, fields)
+	// The attachment bytes go to PocketBase file storage in the same request;
+	// see attachments.go.
+	rec, err := s.createWithAttachments(r.Context(), colMessages, fields, atts)
 	if err != nil {
-		writeUpstreamError(w, err)
+		writeCreateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusAccepted, recordToMessage(rec))
+	out := recordToMessage(rec)
+	// Echo what was sent rather than reading the files straight back.
+	out.Attachments = atts
+	writeJSON(w, http.StatusAccepted, out)
 }
 
 // resolveDevice returns the PocketBase device record id to target. requested may
@@ -295,7 +300,7 @@ func (s *Server) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]messageDTO, 0, len(res.Items))
 	for _, rec := range res.Items {
-		out = append(out, recordToMessage(rec))
+		out = append(out, s.messageOut(r.Context(), rec))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": out, "total": res.TotalItems, "page": res.Page,
@@ -314,7 +319,7 @@ func (s *Server) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "not your message")
 		return
 	}
-	writeJSON(w, http.StatusOK, recordToMessage(rec))
+	writeJSON(w, http.StatusOK, s.messageOut(r.Context(), rec))
 }
 
 // handlePullMessages returns pending messages for the calling device and marks
@@ -339,12 +344,23 @@ func (s *Server) handlePullMessages(w http.ResponseWriter, r *http.Request) {
 	out := make([]messageDTO, 0, len(res.Items))
 	for _, rec := range res.Items {
 		id := asString(rec["id"])
+		// Read the attachment bytes before claiming the message: the device
+		// sends whatever parts it is handed, so an MMS whose files cannot be
+		// read right now stays Pending for the next pull instead of going out
+		// incomplete. The expiry worker fails it if storage never comes back.
+		atts, aerr := s.loadAttachments(r.Context(), colMessages, rec)
+		if aerr != nil {
+			log.Printf("pull: leaving %s pending: %v", id, aerr)
+			continue
+		}
 		updated, uerr := s.pb.Update(r.Context(), colMessages, id, pb.Record{"status": statusProcessed})
 		if uerr != nil {
 			// Skip a message we couldn't claim rather than failing the pull.
 			continue
 		}
-		out = append(out, recordToMessage(updated))
+		msg := recordToMessage(updated)
+		msg.Attachments = atts
+		out = append(out, msg)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out})
 }
@@ -406,7 +422,7 @@ func (s *Server) handleReportMessage(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, recordToMessage(updated))
+	writeJSON(w, http.StatusOK, s.messageOut(r.Context(), updated))
 }
 
 func eventForStatus(status string) string {

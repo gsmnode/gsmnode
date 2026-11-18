@@ -11,6 +11,16 @@ package bootstrap
 // jsonMaxSize matches the default json field cap in setup-pocketbase.mjs (2 MB).
 const jsonMaxSize = 2000000
 
+// MMS attachment bytes live in a multi-file field, so they sit in PocketBase's
+// file storage — the pb_data volume, or an S3 bucket when one is configured —
+// rather than as base64 inside the record. The API Server enforces the same
+// limits before uploading, so an oversized request is refused with a clear
+// message instead of a PocketBase validation error.
+const (
+	MaxAttachments    = 20
+	MaxAttachmentSize = 5 << 20 // bytes, per file
+)
+
 // WebhookEvents is the canonical set of events a webhook may subscribe to. It
 // backs both the webhooks.event select below and the API Server's registration
 // whitelist, so the two cannot drift — an event missing from either one is
@@ -70,9 +80,13 @@ var collectionsSchema = map[string][]fieldDef{
 		// Data SMS: base64-encoded binary payload sent to a destination port.
 		fText("data_payload", false),
 		fNumber("data_port"),
-		// MMS: subject line and attachments [{filename, content_type, data(base64)}].
+		// MMS: subject line, attachment metadata, and the attachment bytes.
+		// attachments is [{filename, content_type, part}] where part indexes
+		// files; a URL-only part keeps {url} instead, and a record written
+		// before files existed keeps its inline base64 {data}.
 		fText("subject", false),
 		fJSON("attachments", false, jsonMaxSize),
+		fFiles("files", MaxAttachments, MaxAttachmentSize),
 		// When true, phone_numbers and text_message hold client-encrypted
 		// ciphertext (E2E); the server stores/relays them without reading them.
 		fBool("encrypted"),
@@ -96,6 +110,7 @@ var collectionsSchema = map[string][]fieldDef{
 		fNumber("data_port"),
 		fText("subject", false),
 		fJSON("attachments", false, jsonMaxSize),
+		fFiles("files", MaxAttachments, MaxAttachmentSize),
 		// When true, phone_number and message hold client-encrypted ciphertext.
 		fBool("encrypted"),
 		fRelation("device", "devices", false, false),

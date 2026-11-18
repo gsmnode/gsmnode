@@ -1,0 +1,292 @@
+# syntax=docker/dockerfile:1
+#
+# All-in-one image WITH the object store inside: PocketBase + API Server + Web
+# App, plus SeaweedFS as one `weed server -s3` process — master, volume, filer
+# and S3 gateway as goroutines — under supervisord in the same container.
+#
+# This is Dockerfile with the two SeaweedFS containers of
+# docker-compose.seaweedfs.yml folded in. That compose file keeps them outside
+# the image so SeaweedFS can be upgraded without a rebuild; this file trades
+# that away for a single image and a single container. What it costs: a new
+# SeaweedFS means a rebuild (--build-arg SEAWEED_VERSION). For per-role
+# restart, metrics and the admin UI, see Dockerfile.seaweedfs.split.
+#
+# MMS attachments — sent and received — go to the bucket; the database,
+# PocketBase's own backups and the API Server's /data stay where they are.
+#
+# The build context MUST be the project root so this file can reach both
+# "API Server/" and "Web App/". Build it with:
+#
+#   docker build -f Docker-AIO/Dockerfile.seaweedfs -t gsmnode-aio-seaweedfs .
+#
+# Run it (everything starts together):
+#
+#   docker run -d --name gsmnode -p 80:80 -p 8070:8070 -p 8080:8080 \
+#     -e PB_ADMIN_EMAIL=admin@example.com \
+#     -e PB_ADMIN_PASSWORD=change-me \
+#     -e GSMNODE_SUPERADMIN_EMAIL=owner@example.com \
+#     -e GSMNODE_SUPERADMIN_PASSWORD=change-me \
+#     -e PB_S3_ACCESS_KEY=gsmnode -e PB_S3_SECRET=change-me \
+#     -v gsmnode_pb:/pb/pb_data \
+#     -v gsmnode_data:/data \
+#     -v gsmnode_seaweed:/seaweed/data \
+#     gsmnode-aio-seaweedfs
+#
+# Then: web app on http://host/ and PocketBase admin on http://host:8070/_/.
+# On first boot PocketBase's program creates the bucket, and the API Server
+# reconciles the schema, creates the super-admin, and points PocketBase's file
+# storage at the bucket. Every step is idempotent.
+#
+# Port map inside the container (only 80, 8070, 8080 and 8333 are meant to be
+# published):
+#
+#   80     nginx (Web App, /api/ proxied)
+#   8070   PocketBase
+#   8080   API Server            ← which is why the volume server is NOT on its
+#   8081   SeaweedFS volume        usual 8080 here
+#   8333   SeaweedFS S3 gateway  (PocketBase's endpoint; publish on loopback)
+#   8888   SeaweedFS filer
+#   9333   SeaweedFS master
+
+# SeaweedFS release to bake in, pinned so a rebuild months from now brings up
+# the same one. Same tag the compose SeaweedFS files run as SEAWEED_IMAGE.
+# Override with --build-arg SEAWEED_VERSION=... to upgrade.
+ARG SEAWEED_VERSION="4.45"
+
+# --- Stage 1: build the Go API Server ---------------------------------------
+FROM golang:1.26-alpine AS api-build
+WORKDIR /src
+COPY ["API Server/go.mod", "./"]
+COPY ["API Server/go.su[m]", "./"]
+RUN go mod download
+# Only cmd/ + internal are needed; the panel is already built into
+# internal/api/dist and embedded via //go:embed. Entry point is cmd/server.
+COPY ["API Server/cmd", "./cmd"]
+COPY ["API Server/internal", "./internal"]
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api-server ./cmd/server
+
+# --- Stage 2: build the Vue Web App -----------------------------------------
+# The Vue source lives under "Web App/web/".
+FROM node:22-alpine AS web-build
+WORKDIR /app
+COPY ["Web App/web/package.json", "Web App/web/package-lock.json", "./"]
+RUN npm ci
+COPY ["Web App/web/index.html", "Web App/web/vite.config.js", "./"]
+COPY ["Web App/web/src", "./src"]
+COPY ["Web App/web/public", "./public"]
+# Empty -> bundle uses same-origin "/api", proxied to the API Server by nginx.
+ARG VITE_API_BASE
+# vite.config writes to ../server/dist by default; emit into ./dist here.
+RUN npm run build -- --outDir dist --emptyOutDir
+
+# --- Stage 3: SeaweedFS -----------------------------------------------------
+# The one static binary from the official image. SEAWEED_VERSION is declared at
+# the top of the file: an ARG used in a FROM has to be global, and one declared
+# here would belong to the stage above and expand to nothing.
+FROM chrislusf/seaweedfs:${SEAWEED_VERSION} AS seaweed
+
+# --- Stage 4: runtime (all services) ----------------------------------------
+FROM alpine:latest
+
+ARG PB_VERSION=""
+ARG TARGETARCH="amd64"
+
+RUN apk add --no-cache ca-certificates tzdata unzip wget nginx supervisor \
+    && mkdir -p /run/nginx
+
+# PocketBase from the official release (pinned via PB_VERSION, else latest).
+WORKDIR /pb
+RUN set -eux; \
+    ver="${PB_VERSION}"; \
+    if [ -z "$ver" ]; then \
+      ver="$(wget -qO- https://api.github.com/repos/pocketbase/pocketbase/releases/latest \
+        | grep -o '"tag_name": *"v[^"]*"' | head -1 | sed -E 's/.*"v([^"]+)".*/\1/')"; \
+    fi; \
+    echo "Installing PocketBase v${ver} (${TARGETARCH})"; \
+    wget -q -O /tmp/pb.zip \
+      "https://github.com/pocketbase/pocketbase/releases/download/v${ver}/pocketbase_${ver}_linux_${TARGETARCH}.zip"; \
+    unzip /tmp/pb.zip -d /pb; \
+    rm /tmp/pb.zip
+
+# API Server binary, built Web App static assets, and the weed binary.
+COPY --from=api-build /out/api-server /usr/local/bin/api-server
+COPY --from=web-build /app/dist /usr/share/nginx/html
+COPY --from=seaweed /usr/bin/weed /usr/local/bin/weed
+
+# nginx: serve the SPA and proxy /api/ to the API Server on localhost.
+RUN cat > /etc/nginx/http.d/default.conf <<'NGINX'
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    gzip on;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # Liveness probe, matching the Web App BFF's own /healthz byte for byte —
+    # the API Server polls it for the Web App health on its panel overview.
+    # Without an exact-match location the SPA fallback below would answer it
+    # with index.html and a 200, i.e. "healthy" whatever the state of nginx.
+    location = /healthz {
+        default_type application/json;
+        return 200 '{"status":"ok","service":"gsmnode-web"}';
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+NGINX
+
+# supervisord runs the four processes and keeps them alive. Priorities only
+# order the launches; readiness is the `until wget` loop in front of each
+# program that needs another one up, the same chain the compose file spells out
+# with depends_on + healthchecks: SeaweedFS → bucket → PocketBase → API Server.
+RUN cat > /etc/supervisord.conf <<'SUPERVISOR'
+[supervisord]
+nodaemon=true
+user=root
+pidfile=/run/supervisord.pid
+logfile=/dev/null
+logfile_maxbytes=0
+
+; SeaweedFS: one process, four roles — master, volume, filer and the S3
+; gateway. -dir is the only state it keeps. -ip=127.0.0.1 is the address the
+; roles advertise to each other, which is where they are; -ip.bind stays open
+; so the gateway can be published (weed server has one bind flag for all four,
+; and the volume server, on 8081 because 8080 is the API Server, serves file
+; content by id with no authentication — so never publish 8081).
+;
+; SeaweedFS falls back to AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY when started
+; without an -s3.config file, and configuring one identity is what takes the
+; gateway out of its default allow-anyone mode. They are the PB_S3_* pair
+; PocketBase authenticates with, mapped here so there is one pair to set — and
+; an empty pair means no gateway rather than an open one.
+[program:seaweedfs]
+command=/bin/sh -c 'if [ -z "$PB_S3_ACCESS_KEY" ] || [ -z "$PB_S3_SECRET" ]; then echo "seaweedfs: PB_S3_ACCESS_KEY and PB_S3_SECRET are required; refusing to start an unauthenticated gateway" >&2; exit 1; fi; export AWS_ACCESS_KEY_ID="$PB_S3_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$PB_S3_SECRET"; exec /usr/local/bin/weed server -dir=/seaweed/data -ip=127.0.0.1 -ip.bind=0.0.0.0 -volume.port=8081 -s3 -master.volumeSizeLimitMB=1024'
+priority=1
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+; PocketBase: wait for the S3 gateway — it is the process that reads and writes
+; the objects, so the bucket has to be serving before it does. Then create the
+; bucket: PocketBase never issues a CreateBucket of its own and SeaweedFS will
+; not conjure one on first upload. Creating a bucket that already exists is a
+; no-op, and `|| true` keeps a restart from being blocked by the shell's exit
+; status — a gateway that is genuinely broken is reported by the API Server's
+; own S3 check at boot, with the reason. Then upsert the superuser
+; (idempotent) and serve.
+[program:pocketbase]
+directory=/pb
+command=/bin/sh -c 'until wget -qO- http://127.0.0.1:8333/healthz >/dev/null 2>&1; do echo "waiting for seaweedfs..."; sleep 1; done; echo "s3.bucket.create -name $PB_S3_BUCKET" | /usr/local/bin/weed shell -master=127.0.0.1:9333 || true; /pb/pocketbase superuser upsert "$PB_ADMIN_EMAIL" "$PB_ADMIN_PASSWORD" 2>/dev/null || true; exec /pb/pocketbase serve --http=0.0.0.0:8070'
+priority=10
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+; API Server: wait for PocketBase to be healthy, then start. Its bootstrap
+; points PocketBase's file storage at the bucket and asks it to prove the
+; gateway is reachable. It runs from /data
+; because it writes plugins.json and the panel's persisted .env relative to its
+; working directory, and /data is the volume that outlives the container.
+[program:api-server]
+directory=/data
+command=/bin/sh -c 'until wget -qO- http://127.0.0.1:8070/api/health >/dev/null 2>&1; do echo "waiting for pocketbase..."; sleep 1; done; exec /usr/local/bin/api-server'
+priority=20
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[program:nginx]
+command=/usr/sbin/nginx -g 'daemon off;'
+priority=30
+autostart=true
+autorestart=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+SUPERVISOR
+
+# API Server config: everything is local to this container.
+#
+# File storage is on by construction: the gateway is in this image, at a fixed
+# loopback address, path style because a self-hosted gateway has no per-bucket
+# DNS. The region is a formality SeaweedFS ignores and PocketBase insists on.
+# supervisord passes these through to the API Server, whose bootstrap writes
+# them into PocketBase's settings on every boot. Only record files move — MMS
+# attachments; the database and PocketBase's own backups stay on /pb/pb_data.
+ENV API_ADDR=:8080 \
+    POCKETBASE_URL=http://127.0.0.1:8070 \
+    MESSAGE_TTL=5m \
+    CORS_ALLOW_ORIGINS=http://localhost:8090 \
+    PB_BOOTSTRAP=true \
+    PLUGINS_FILE=/data/plugins.json \
+    WEBAPP_URL=http://127.0.0.1:80 \
+    PB_S3_ENABLED=true \
+    PB_S3_ENDPOINT=http://127.0.0.1:8333 \
+    PB_S3_BUCKET=gsmnode \
+    PB_S3_REGION=us-east-1 \
+    PB_S3_FORCE_PATH_STYLE=true
+
+# Required at runtime (no safe defaults): PB_ADMIN_EMAIL and PB_ADMIN_PASSWORD;
+# PB_S3_ACCESS_KEY, PB_S3_SECRET (the gateway's single identity AND what
+# PocketBase authenticates with — the gateway refuses to start without them).
+# Pass them with `docker run -e ...`.
+# Optional: GSMNODE_SUPERADMIN_EMAIL / GSMNODE_SUPERADMIN_PASSWORD create the
+# first app super-admin on boot; PB_BOOTSTRAP=false skips schema setup.
+
+# Three volumes. /pb/pb_data: the database, MMS attachments stored before S3
+# was on, and PocketBase's own backups. /data: the API Server's plugin config
+# and the settings the panel persists. /seaweed/data: everything SeaweedFS
+# keeps, in the layout `weed server -dir` writes — the same one the split
+# image's master, volume and filer share, so a SEAWEED_DATA volume from any of
+# the SeaweedFS shapes mounts here unchanged, and vice versa.
+RUN mkdir -p /data /seaweed/data
+VOLUME /pb/pb_data
+VOLUME /data
+VOLUME /seaweed/data
+# 80 = Web App, 8070 = PocketBase admin, 8080 = API Server + embedded API panel,
+# 8333 = S3 gateway (for aws-cli and the like; loopback is enough).
+EXPOSE 80 8070 8080 8333
+
+# Every process must answer, so a wedged component shows up in `docker ps`
+# instead of a container that looks up while part of it is dead. start-period
+# covers SeaweedFS coming up plus the first-boot schema bootstrap on a cold
+# database.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:9333/cluster/status >/dev/null 2>&1 \
+     && wget -qO- http://127.0.0.1:8333/healthz >/dev/null 2>&1 \
+     && wget -qO- http://127.0.0.1:8070/api/health >/dev/null 2>&1 \
+     && wget -qO- http://127.0.0.1:8080/api/health >/dev/null 2>&1 \
+     && wget -qO- http://127.0.0.1:80/healthz >/dev/null 2>&1 \
+     || exit 1
+
+CMD ["supervisord", "-c", "/etc/supervisord.conf"]

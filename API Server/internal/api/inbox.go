@@ -83,7 +83,7 @@ func (s *Server) handleListInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]inboxDTO, 0, len(res.Items))
 	for _, rec := range res.Items {
-		out = append(out, recordToInbox(rec))
+		out = append(out, s.inboxOut(r.Context(), rec))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": out, "total": res.TotalItems, "page": res.Page,
@@ -151,15 +151,16 @@ func (s *Server) handleReceiveSMS(w http.ResponseWriter, r *http.Request) {
 			fields["data_port"] = *req.DataPort
 		}
 	}
+	var atts []attachment
 	if inType == inTypeMMS {
 		fields["subject"] = req.Subject
-		if len(req.Attachments) > 0 {
-			fields["attachments"] = req.Attachments
-		}
+		atts = req.Attachments
 	}
-	rec, err := s.pb.Create(r.Context(), colInbox, fields)
+	// The attachment bytes go to PocketBase file storage in the same request;
+	// see attachments.go.
+	rec, err := s.createWithAttachments(r.Context(), colInbox, fields, atts)
 	if err != nil {
-		writeUpstreamError(w, err)
+		writeCreateError(w, err)
 		return
 	}
 
@@ -195,5 +196,8 @@ func (s *Server) handleReceiveSMS(w http.ResponseWriter, r *http.Request) {
 		s.dispatchWebhooks(owner, devID, "sms:received", payload)
 	}
 
-	writeJSON(w, http.StatusCreated, recordToInbox(rec))
+	out := recordToInbox(rec)
+	// Echo what was sent rather than reading the files straight back.
+	out.Attachments = atts
+	writeJSON(w, http.StatusCreated, out)
 }

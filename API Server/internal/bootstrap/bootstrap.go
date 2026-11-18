@@ -29,6 +29,24 @@ type Options struct {
 	SuperAdminEmail    string
 	SuperAdminPassword string
 	SuperAdminName     string
+
+	// S3, when non-nil and Enabled, points PocketBase's record-file storage at
+	// a bucket. Nil is the normal case — a stack started from the plain compose
+	// file keeps its uploads on the pb_data volume.
+	S3 *S3Options
+}
+
+// S3Options describes the bucket PocketBase should keep record files in. It
+// mirrors PocketBase's own settings block one field at a time, so there is
+// nothing to translate at the wire.
+type S3Options struct {
+	Enabled        bool
+	Bucket         string
+	Region         string
+	Endpoint       string
+	AccessKey      string
+	Secret         string
+	ForcePathStyle bool
 }
 
 // fieldDef is a schema field normalized to a single shape; it is rendered into
@@ -43,7 +61,8 @@ type fieldDef struct {
 	values        []string
 	onCreate      bool // autodate only
 	onUpdate      bool // autodate only
-	maxSize       int  // json only, bytes
+	maxSize       int  // file/json only, bytes (per file for file fields)
+	maxSelect     int  // file only: how many files the field may hold
 }
 
 // Field builders, mirroring the f.* helpers in setup-pocketbase.mjs.
@@ -71,6 +90,12 @@ func fJSON(name string, required bool, maxSize int) fieldDef {
 	return fieldDef{name: name, typ: "json", required: required, maxSize: maxSize}
 }
 
+// fFiles is a multi-file field with no MIME restriction: an MMS can carry any
+// part type the carrier will pass.
+func fFiles(name string, maxSelect, maxSize int) fieldDef {
+	return fieldDef{name: name, typ: "file", maxSelect: maxSelect, maxSize: maxSize}
+}
+
 // renderField turns a fieldDef into the map PocketBase expects, in either the
 // modern ("fields") or legacy ("schema") layout. idByName resolves a relation's
 // target collection name to its id.
@@ -86,6 +111,10 @@ func renderField(d fieldDef, format string, idByName map[string]string) map[stri
 		case "select":
 			options["values"] = d.values
 			options["maxSelect"] = 1
+		case "file":
+			options["maxSelect"] = d.maxSelect
+			options["maxSize"] = d.maxSize
+			options["mimeTypes"] = []string{}
 		case "json":
 			options["maxSize"] = d.maxSize
 		}
@@ -105,6 +134,10 @@ func renderField(d fieldDef, format string, idByName map[string]string) map[stri
 	case "autodate":
 		field["onCreate"] = d.onCreate
 		field["onUpdate"] = d.onUpdate
+	case "file":
+		field["maxSelect"] = d.maxSelect
+		field["maxSize"] = d.maxSize
+		field["mimeTypes"] = []string{}
 	case "json":
 		field["maxSize"] = d.maxSize
 	}
@@ -166,6 +199,9 @@ func Run(ctx context.Context, client *pb.Client, opts Options) error {
 
 	if err := ensureSuperAdmin(ctx, client, opts); err != nil {
 		return fmt.Errorf("super-admin: %w", err)
+	}
+	if err := ensureFileStorage(ctx, client, opts.S3); err != nil {
+		return fmt.Errorf("file storage: %w", err)
 	}
 	return nil
 }
@@ -371,6 +407,102 @@ func ensureSuperAdmin(ctx context.Context, client *pb.Client, opts Options) erro
 	}
 	log.Printf("bootstrap: super-admin %s created", opts.SuperAdminEmail)
 	return nil
+}
+
+// --- file storage ----------------------------------------------------------
+
+// storageSettings is the slice of PocketBase's settings this step owns. The
+// json names are PocketBase's own (core.S3Config), so the PATCH body is just
+// this type marshalled back out.
+type storageSettings struct {
+	Enabled        bool   `json:"enabled"`
+	Bucket         string `json:"bucket"`
+	Region         string `json:"region"`
+	Endpoint       string `json:"endpoint"`
+	AccessKey      string `json:"accessKey"`
+	Secret         string `json:"secret,omitempty"`
+	ForcePathStyle bool   `json:"forcePathStyle"`
+}
+
+// sameExceptSecret compares everything a read of the settings can be trusted
+// on. PocketBase masks the stored secret, so a rotation of the secret alone is
+// invisible from here — changing any other PB_S3_* value forces the write, and
+// so does editing it in the admin UI.
+func (s storageSettings) sameExceptSecret(other storageSettings) bool {
+	s.Secret, other.Secret = "", ""
+	return s == other
+}
+
+// ensureFileStorage points PocketBase's record-file storage at the configured
+// bucket, and does nothing at all when no bucket was asked for.
+//
+// It never turns S3 *off*: files already written to a bucket are only reachable
+// while PocketBase is still pointed at it, so going back to the plain compose
+// file leaves the setting where it is rather than stranding every existing
+// attachment. Moving back to local storage is a deliberate act in the admin UI.
+func ensureFileStorage(ctx context.Context, client *pb.Client, opts *S3Options) error {
+	if opts == nil || !opts.Enabled {
+		return nil // not requested
+	}
+	want := storageSettings{
+		Enabled:        true,
+		Bucket:         opts.Bucket,
+		Region:         opts.Region,
+		Endpoint:       opts.Endpoint,
+		AccessKey:      opts.AccessKey,
+		Secret:         opts.Secret,
+		ForcePathStyle: opts.ForcePathStyle,
+	}
+
+	raw, status, err := client.Raw(ctx, http.MethodGet, "/api/settings", nil)
+	if err != nil {
+		return err
+	}
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("read settings: status %d: %s", status, raw)
+	}
+	var current struct {
+		S3 storageSettings `json:"s3"`
+	}
+	if err := json.Unmarshal(raw, &current); err != nil {
+		return err
+	}
+
+	if current.S3.sameExceptSecret(want) {
+		log.Printf("bootstrap: • file storage already on S3 (%s)", want.Bucket)
+	} else {
+		// Only the s3 block is sent: everything else in the settings — mail,
+		// backups, rate limits — belongs to whoever set it.
+		raw, status, err = client.Raw(ctx, http.MethodPatch, "/api/settings",
+			map[string]any{"s3": want})
+		if err != nil {
+			return err
+		}
+		if status < 200 || status >= 300 {
+			return fmt.Errorf("apply settings: status %d: %s", status, raw)
+		}
+		log.Printf("bootstrap: ✓ file storage → S3 (%s at %s)", want.Bucket, want.Endpoint)
+	}
+
+	testFileStorage(ctx, client)
+	return nil
+}
+
+// testFileStorage asks PocketBase to prove it can actually reach the bucket,
+// and only says so in the log. A failure here means uploads will fail, but the
+// server still has to come up — a stack that refuses to boot cannot be fixed
+// from its own panel.
+func testFileStorage(ctx context.Context, client *pb.Client) {
+	raw, status, err := client.Raw(ctx, http.MethodPost, "/api/settings/test/s3",
+		map[string]any{"filesystem": "storage"})
+	switch {
+	case err != nil:
+		log.Printf("bootstrap: WARNING: S3 storage test failed: %v", err)
+	case status < 200 || status >= 300:
+		log.Printf("bootstrap: WARNING: S3 storage unreachable (status %d): %s", status, raw)
+	default:
+		log.Printf("bootstrap: ✓ S3 storage reachable")
+	}
 }
 
 // --- helpers ---------------------------------------------------------------
